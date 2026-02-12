@@ -19,9 +19,10 @@ def create_lr_scheduler(optimizer: Optimizer, cfg: TrainingConfig, total_steps: 
         SequentialLR combining warmup and cosine decay.
 
     """
-    warmup = LinearLR(optimizer, start_factor=1e-8, end_factor=1.0, total_iters=cfg.warmup_steps)
-    decay = CosineAnnealingLR(optimizer, T_max=total_steps - cfg.warmup_steps)
-    return SequentialLR(optimizer, schedulers=[warmup, decay], milestones=[cfg.warmup_steps])
+    warmup_steps = min(cfg.warmup_steps, total_steps // 5)
+    warmup = LinearLR(optimizer, start_factor=1e-8, end_factor=1.0, total_iters=warmup_steps)
+    decay = CosineAnnealingLR(optimizer, T_max=max(total_steps - warmup_steps, 1))
+    return SequentialLR(optimizer, schedulers=[warmup, decay], milestones=[warmup_steps])
 
 
 def get_ema_momentum(step: int, total_steps: int, cfg: TrainingConfig) -> float:

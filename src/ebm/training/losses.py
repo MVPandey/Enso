@@ -45,15 +45,19 @@ def vicreg_loss(z: Tensor, var_weight: float = 25.0, cov_weight: float = 1.0) ->
     return var_weight * var_loss + cov_weight * cov_loss
 
 
-def compute_loss(out: JEPAOutput, solution: Tensor, cfg: TrainingConfig) -> LossOutput:
+def compute_loss(out: JEPAOutput, solution: Tensor, mask: Tensor, cfg: TrainingConfig) -> LossOutput:
     """
     Compute combined training loss.
 
     L_total = L_energy + L_vicreg + decode_loss_weight * L_decode
 
+    Decode loss is computed only on empty cells (mask == 0) so the model
+    learns to predict the solution rather than just memorizing given clues.
+
     Args:
         out: Forward pass output from SudokuJEPA.
         solution: (B, 9, 9, 9) one-hot encoded solution.
+        mask: (B, 9, 9) binary mask, 1 = given clue.
         cfg: Training config with loss weights.
 
     Returns:
@@ -63,13 +67,14 @@ def compute_loss(out: JEPAOutput, solution: Tensor, cfg: TrainingConfig) -> Loss
     energy_loss = out.energy.mean()
 
     vreg = vicreg_loss(
-        out.z_pred,
+        out.z_context,
         var_weight=cfg.vicreg_var_weight,
         cov_weight=cfg.vicreg_cov_weight,
     )
 
     targets = solution.argmax(dim=-1)
-    decode_loss = F.cross_entropy(out.decode_logits.reshape(-1, 9), targets.reshape(-1))
+    empty = mask == 0
+    decode_loss = F.cross_entropy(out.decode_logits[empty], targets[empty])
 
     total = energy_loss + vreg + cfg.decode_loss_weight * decode_loss
 

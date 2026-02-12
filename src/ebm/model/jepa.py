@@ -18,6 +18,7 @@ class JEPAOutput:
     """Container for SudokuJEPA forward pass outputs."""
 
     energy: Tensor
+    z_context: Tensor
     z_pred: Tensor
     z_target: Tensor
     decode_logits: Tensor
@@ -129,13 +130,14 @@ class SudokuJEPA(nn.Module):
         z_pred = self.predictor(z_context, z)
 
         with torch.no_grad():
-            z_target = self.target_encoder(solution)
+            z_target = self.target_encoder(solution.permute(0, 3, 1, 2))
 
         energy = energy_fn(z_pred, z_target)
         decode_logits = self.decoder(z_context, z, puzzle, mask)
 
         return JEPAOutput(
             energy=energy,
+            z_context=z_context,
             z_pred=z_pred,
             z_target=z_target,
             decode_logits=decode_logits,

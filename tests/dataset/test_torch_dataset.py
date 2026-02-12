@@ -48,10 +48,10 @@ def test_puzzle_onehot_valid():
 
 
 def test_solution_onehot_valid():
-    """Each cell should have exactly one channel active."""
+    """Each cell should have exactly one digit channel active."""
     ds = SudokuTorchDataset(_make_sample_df())
-    solution = ds[0]['solution']  # (9, 9, 9)
-    sums = solution.sum(dim=0)  # (9, 9)
+    solution = ds[0]['solution']  # (9, 9, 9) = (row, col, digit)
+    sums = solution.sum(dim=-1)  # (9, 9)
     assert torch.allclose(sums, torch.ones(9, 9))
 
 

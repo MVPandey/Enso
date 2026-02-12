@@ -40,7 +40,13 @@ def train(args: argparse.Namespace) -> None:
         df = ds.load_all()
     logger.info('Dataset size: %d', len(df))
 
-    train_df, val_df, _ = split_dataset(df, val_size=train_cfg.val_size, test_size=train_cfg.test_size)
+    val_size = train_cfg.val_size
+    test_size = train_cfg.test_size
+    if val_size + test_size >= len(df):
+        val_size = max(1, int(len(df) * 0.05))
+        test_size = max(1, int(len(df) * 0.05))
+
+    train_df, val_df, _ = split_dataset(df, val_size=val_size, test_size=test_size)
     logger.info('Train: %d | Val: %d', len(train_df), len(val_df))
 
     train_ds = SudokuTorchDataset(train_df)
@@ -75,7 +81,13 @@ def eval_model(args: argparse.Namespace) -> None:
     else:
         df = ds.load_all()
 
-    _, _, test_df = split_dataset(df, val_size=train_cfg.val_size, test_size=train_cfg.test_size)
+    val_size = train_cfg.val_size
+    test_size = train_cfg.test_size
+    if val_size + test_size >= len(df):
+        val_size = max(1, int(len(df) * 0.05))
+        test_size = max(1, int(len(df) * 0.05))
+
+    _, _, test_df = split_dataset(df, val_size=val_size, test_size=test_size)
     logger.info('Test set: %d puzzles', len(test_df))
 
     test_ds = SudokuTorchDataset(test_df)

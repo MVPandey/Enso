@@ -66,7 +66,7 @@ class SudokuTorchDataset(Dataset):
 
         solution_tensor = np.zeros((9, 9, 9), dtype=np.float32)
         for d in range(1, 10):
-            solution_tensor[d - 1] = solution_grid == d
+            solution_tensor[:, :, d - 1] = solution_grid == d
 
         mask = (~empty_mask).astype(np.float32)
 

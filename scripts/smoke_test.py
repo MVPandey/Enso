@@ -60,7 +60,7 @@ while step < N_STEPS:
         mask = batch['mask'].to(device)
 
         out = model(puzzle, solution, mask)
-        loss_out = compute_loss(out, solution, train_cfg)
+        loss_out = compute_loss(out, solution, mask, train_cfg)
 
         optimizer.zero_grad()
         loss_out.total.backward()

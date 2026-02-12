@@ -96,6 +96,7 @@ class Trainer:
                 epoch=epoch,
                 step=self.global_step,
                 val_energy=val_energy,
+                cell_accuracy=cell_acc,
             ))
 
             logger.info(
@@ -121,7 +122,7 @@ class Trainer:
             mask = batch['mask'].to(self.device)
 
             out = self.model(puzzle, solution, mask)
-            loss_out = compute_loss(out, solution, self.train_cfg)
+            loss_out = compute_loss(out, solution, mask, self.train_cfg)
 
             self.optimizer.zero_grad()
             loss_out.total.backward()

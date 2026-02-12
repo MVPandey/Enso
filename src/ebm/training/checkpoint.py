@@ -29,14 +29,15 @@ class _CheckpointData:
     epoch: int
     step: int
     val_energy: float
+    cell_accuracy: float
 
 
 class CheckpointManager:
     """
-    Manages saving/loading checkpoints, keeping only the best K by validation energy.
+    Manages saving/loading checkpoints, keeping only the best K by cell accuracy.
 
-    Lower energy is better. When a new checkpoint is saved and the limit is
-    exceeded, the worst (highest energy) checkpoint is deleted.
+    Higher cell accuracy is better. When a new checkpoint is saved and the limit
+    is exceeded, the worst (lowest accuracy) checkpoint is deleted.
     """
 
     def __init__(self, checkpoint_dir: Path, keep_top_k: int = 3) -> None:
@@ -64,8 +65,8 @@ class CheckpointManager:
 
         """
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        path = self.checkpoint_dir / f'checkpoint_epoch{data.epoch:03d}_energy{data.val_energy:.4f}.pt'
-        entry = _CheckpointEntry(metric=-data.val_energy, path=path)
+        path = self.checkpoint_dir / f'checkpoint_epoch{data.epoch:03d}_acc{data.cell_accuracy:.4f}.pt'
+        entry = _CheckpointEntry(metric=data.cell_accuracy, path=path)
 
         if len(self._heap) < self.keep_top_k:
             self._write(data, path)
@@ -73,7 +74,7 @@ class CheckpointManager:
             return path
 
         worst = self._heap[0]
-        if data.val_energy < -worst.metric:
+        if data.cell_accuracy > worst.metric:
             self._write(data, path)
             evicted = heapq.heapreplace(self._heap, entry)
             if evicted.path.exists():
@@ -93,10 +94,11 @@ class CheckpointManager:
                 'epoch': data.epoch,
                 'step': data.step,
                 'val_energy': data.val_energy,
+                'cell_accuracy': data.cell_accuracy,
             },
             path,
         )
-        logger.info('Saved checkpoint %s (energy=%.4f)', path.name, data.val_energy)
+        logger.info('Saved checkpoint %s (cell_acc=%.4f)', path.name, data.cell_accuracy)
 
     @staticmethod
     def load(path: Path, model: nn.Module, optimizer: Optimizer | None = None) -> dict:
