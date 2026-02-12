@@ -80,8 +80,8 @@ class SudokuJEPA(nn.Module):
         self.predictor = LatentPredictor(cfg=arch_cfg)
         self.decoder = SudokuDecoder(cfg=arch_cfg)
 
-        for p in self.target_encoder.parameters():
-            p.requires_grad = False
+        for param in self.target_encoder.parameters():
+            param.requires_grad = False
 
         self._init_target_encoder()
 
@@ -122,10 +122,10 @@ class SudokuJEPA(nn.Module):
             JEPAOutput with energy, z_pred, z_target, and decode_logits.
 
         """
-        b = puzzle.shape[0]
+        batch_size = puzzle.shape[0]
 
         z_context = self.context_encoder(puzzle)
-        z = torch.randn(b, self.arch_cfg.d_latent, device=puzzle.device)
+        z = torch.randn(batch_size, self.arch_cfg.d_latent, device=puzzle.device)
 
         z_pred = self.predictor(z_context, z)
 
@@ -164,7 +164,7 @@ class SudokuJEPA(nn.Module):
         if not inference_cfg:
             inference_cfg = InferenceConfig.from_training_config(self.train_cfg)
 
-        b = puzzle.shape[0]
+        batch_size = puzzle.shape[0]
         device = puzzle.device
         n_chains = inference_cfg.n_chains
 
@@ -175,10 +175,10 @@ class SudokuJEPA(nn.Module):
         puzzle_exp = puzzle.repeat_interleave(n_chains, dim=0)
         mask_exp = mask.repeat_interleave(n_chains, dim=0)
 
-        z = torch.randn(b * n_chains, self.arch_cfg.d_latent, device=device)
+        z = torch.randn(batch_size * n_chains, self.arch_cfg.d_latent, device=device)
 
-        # Langevin dynamics needs gradients for z even inside no_grad contexts
-        total_energy = torch.zeros(b * n_chains, device=device)
+        # autograd.grad requires z to have gradients even inside no_grad contexts
+        total_energy = torch.zeros(batch_size * n_chains, device=device)
         with torch.enable_grad():
             z = z.detach().requires_grad_(True)
             for step in range(inference_cfg.n_steps):
@@ -199,9 +199,9 @@ class SudokuJEPA(nn.Module):
         with torch.no_grad():
             final_logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)
 
-        final_logits = final_logits.reshape(b, n_chains, 9, 9, 9)
-        chain_energy = total_energy.detach().reshape(b, n_chains)
+        final_logits = final_logits.reshape(batch_size, n_chains, 9, 9, 9)
+        chain_energy = total_energy.detach().reshape(batch_size, n_chains)
         best_chain = chain_energy.argmin(dim=1)
-        best_logits = final_logits[torch.arange(b, device=device), best_chain]
+        best_logits = final_logits[torch.arange(batch_size, device=device), best_chain]
 
         return best_logits.argmax(dim=-1) + 1

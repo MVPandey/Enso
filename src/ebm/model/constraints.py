@@ -4,17 +4,12 @@ import torch
 from torch import Tensor
 
 _GROUPS: list[list[int]] = []
-for r in range(9):
-    _GROUPS.append(list(range(r * 9, r * 9 + 9)))
-for c in range(9):
-    _GROUPS.append(list(range(c, 81, 9)))
-for box_r in range(3):
-    for box_c in range(3):
-        cells = []
-        for dr in range(3):
-            for dc in range(3):
-                cells.append((box_r * 3 + dr) * 9 + box_c * 3 + dc)
-        _GROUPS.append(cells)
+_GROUPS.extend([list(range(row * 9, row * 9 + 9)) for row in range(9)])
+_GROUPS.extend([list(range(col, 81, 9)) for col in range(9)])
+_GROUPS.extend([
+    [(box_r * 3 + dr) * 9 + box_c * 3 + dc for dr in range(3) for dc in range(3)]
+    for box_r in range(3) for box_c in range(3)
+])
 
 GROUP_INDICES = torch.tensor(_GROUPS, dtype=torch.long)
 
@@ -35,8 +30,8 @@ def constraint_penalty(probs: Tensor) -> Tensor:
         (B,) per-sample constraint penalty.
 
     """
-    b = probs.shape[0]
-    flat_probs = probs.reshape(b, 81, 9)
+    batch_size = probs.shape[0]
+    flat_probs = probs.reshape(batch_size, 81, 9)
 
     group_idx = GROUP_INDICES.to(flat_probs.device)
     group_probs = flat_probs[:, group_idx]

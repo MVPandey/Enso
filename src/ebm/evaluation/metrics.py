@@ -78,18 +78,18 @@ def _constraint_satisfaction(pred: Tensor) -> tuple[int, int]:
         Tuple of (satisfied_count, total_count).
 
     """
-    b = pred.shape[0]
-    flat = pred.reshape(b, 81)
+    batch_size = pred.shape[0]
+    flat = pred.reshape(batch_size, 81)
 
     group_idx = GROUP_INDICES.to(pred.device)
     group_vals = flat[:, group_idx]
 
-    total = b * 27
+    total = batch_size * 27
     satisfied = 0
-    for i in range(27):
-        group = group_vals[:, i]
+    for group_id in range(27):
+        group = group_vals[:, group_id]
         sorted_vals, _ = group.sort(dim=-1)
-        expected = torch.arange(1, 10, device=pred.device).unsqueeze(0).expand(b, -1)
+        expected = torch.arange(1, 10, device=pred.device).unsqueeze(0).expand(batch_size, -1)
         satisfied += int((sorted_vals == expected).all(dim=-1).sum().item())
 
     return satisfied, total

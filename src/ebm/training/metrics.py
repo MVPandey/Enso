@@ -1,6 +1,7 @@
 """Experiment tracking integration with Weights & Biases."""
 
 import logging
+from datetime import datetime, timezone
 
 from torch import Tensor
 
@@ -35,11 +36,14 @@ def init_wandb(app_cfg: Config, run_name: str | None = None, extra_config: dict 
         logger.info('W&B not configured, skipping initialization')
         return False
 
+    timestamp = datetime.now(tz=timezone.utc).strftime('%Y%m%d-%H%M%S')
+    name = f'{run_name}-{timestamp}' if run_name else timestamp
+
     wandb.login(key=app_cfg.wandb_api_key)
     wandb.init(
         project=app_cfg.wandb_project,
         entity=app_cfg.wandb_entity,
-        name=run_name,
+        name=name,
         config=extra_config or {},
     )
     return True

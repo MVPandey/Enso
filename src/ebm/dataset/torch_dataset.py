@@ -33,11 +33,11 @@ class SudokuTorchDataset(Dataset):
     @staticmethod
     def _parse_strings(strings: np.ndarray) -> np.ndarray:
         """Convert array of 81-char digit strings to (N, 9, 9) int8 array."""
-        n = len(strings)
-        result = np.zeros((n, 9, 9), dtype=np.int8)
-        for i, s in enumerate(strings):
-            digits = np.frombuffer(s.encode('ascii'), dtype=np.uint8) - ord('0')
-            result[i] = digits.reshape(9, 9)
+        count = len(strings)
+        result = np.zeros((count, 9, 9), dtype=np.int8)
+        for idx, string in enumerate(strings):
+            digits = np.frombuffer(string.encode('ascii'), dtype=np.uint8) - ord('0')
+            result[idx] = digits.reshape(9, 9)
         return result
 
     def __len__(self) -> int:
@@ -61,12 +61,12 @@ class SudokuTorchDataset(Dataset):
         puzzle_tensor = np.zeros((10, 9, 9), dtype=np.float32)
         empty_mask = puzzle_grid == 0
         puzzle_tensor[0] = empty_mask
-        for d in range(1, 10):
-            puzzle_tensor[d] = puzzle_grid == d
+        for digit in range(1, 10):
+            puzzle_tensor[digit] = puzzle_grid == digit
 
         solution_tensor = np.zeros((9, 9, 9), dtype=np.float32)
-        for d in range(1, 10):
-            solution_tensor[:, :, d - 1] = solution_grid == d
+        for digit in range(1, 10):
+            solution_tensor[:, :, digit - 1] = solution_grid == digit
 
         mask = (~empty_mask).astype(np.float32)
 

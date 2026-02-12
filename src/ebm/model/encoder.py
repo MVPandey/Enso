@@ -5,13 +5,11 @@ from torch import Tensor, nn
 
 from ebm.utils.config import ArchitectureConfig
 
-# Precomputed box index for each of the 81 cells (row-major order).
 # Box indices 0-8 map to the 3x3 sub-grids, left-to-right, top-to-bottom.
-_BOX_INDICES = []
-for r in range(9):
-    for c in range(9):
-        _BOX_INDICES.append((r // 3) * 3 + c // 3)
-BOX_INDICES = torch.tensor(_BOX_INDICES, dtype=torch.long)  # (81,)
+BOX_INDICES = torch.tensor(
+    [(r // 3) * 3 + c // 3 for r in range(9) for c in range(9)],
+    dtype=torch.long,
+)
 
 
 class SudokuPositionalEncoding(nn.Module):
@@ -90,7 +88,7 @@ class SudokuEncoder(nn.Module):
             dropout=cfg.dropout,
             activation='gelu',
             batch_first=True,
-            norm_first=True,  # pre-norm
+            norm_first=True,
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=cfg.n_layers, enable_nested_tensor=False)
         self.norm = nn.LayerNorm(cfg.d_model)
@@ -106,8 +104,8 @@ class SudokuEncoder(nn.Module):
             (B, d_model) pooled representation.
 
         """
-        b = x.shape[0]
-        x = x.reshape(b, x.shape[1], 81).permute(0, 2, 1)
+        batch_size = x.shape[0]
+        x = x.reshape(batch_size, x.shape[1], 81).permute(0, 2, 1)
         x = self.input_proj(x)
         x = self.pos_enc(x)
         x = self.transformer(x)

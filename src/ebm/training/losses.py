@@ -37,10 +37,10 @@ def vicreg_loss(z: Tensor, var_weight: float = 25.0, cov_weight: float = 1.0) ->
     std = z.std(dim=0)
     var_loss = F.relu(1.0 - std).mean()
 
-    b, d = z.shape
-    cov = (z.T @ z) / (b - 1)
+    num_samples, num_dims = z.shape
+    cov = (z.T @ z) / (num_samples - 1)
     off_diag = cov - torch.diag(cov.diag())
-    cov_loss = (off_diag**2).sum() / d
+    cov_loss = (off_diag**2).sum() / num_dims
 
     return var_weight * var_loss + cov_weight * cov_loss
 

@@ -22,7 +22,13 @@ logger = logging.getLogger(__name__)
 
 
 def train(args: argparse.Namespace) -> None:
-    """Run training."""
+    """
+    Run training.
+
+    Args:
+        args: Parsed CLI arguments with optional epochs, batch_size, n_samples.
+
+    """
     app_cfg = Config()
     arch_cfg = ArchitectureConfig()
     train_cfg = TrainingConfig()
@@ -70,7 +76,13 @@ def train(args: argparse.Namespace) -> None:
 
 
 def eval_model(args: argparse.Namespace) -> None:
-    """Run evaluation on test set."""
+    """
+    Run evaluation on test set.
+
+    Args:
+        args: Parsed CLI arguments with checkpoint, n_samples, langevin_steps, n_chains.
+
+    """
     arch_cfg = ArchitectureConfig()
     train_cfg = TrainingConfig()
 

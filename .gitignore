@@ -209,6 +209,10 @@ __marimo__/
 # Dataset
 data/
 
+# Training artifacts
+checkpoints/
+wandb/
+
 # Claude Code
 .claude/
 python_skill.md

@@ -62,16 +62,15 @@ class SudokuDecoder(nn.Module):
             (B, 9, 9, 9) logits over digits 1-9 for each cell.
 
         """
-        b = z_context.shape[0]
+        batch_size = z_context.shape[0]
         x = torch.cat([z_context, z], dim=-1)
         x = self.cell_proj(x)
-        x = x.reshape(b, 81, self.d_cell)
+        x = x.reshape(batch_size, 81, self.d_cell)
         x = self.pos_enc(x)
         x = self.transformer(x)
         logits = self.head(x)
-        logits = logits.reshape(b, 9, 9, 9)
+        logits = logits.reshape(batch_size, 9, 9, 9)
 
-        # Hard-enforce given clues so argmax always matches the puzzle input
         clue_logits = puzzle[:, 1:].permute(0, 2, 3, 1)
         clue_mask = mask.unsqueeze(-1)
         logits = logits * (1 - clue_mask) + clue_logits * clue_mask * 1e6

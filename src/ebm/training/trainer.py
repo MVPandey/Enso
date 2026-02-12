@@ -172,5 +172,5 @@ class Trainer:
             all_z_var += compute_z_variance(out.z_pred)
             n_batches += 1
 
-        n = max(n_batches, 1)
-        return total_energy / n, all_cell_acc / n, all_puzzle_acc / n, all_z_var / n
+        divisor = max(n_batches, 1)
+        return total_energy / divisor, all_cell_acc / divisor, all_puzzle_acc / divisor, all_z_var / divisor
