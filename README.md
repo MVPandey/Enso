@@ -15,22 +15,53 @@ This project is an independent replication using a JEPA (Joint Embedding Predict
 
 ## Architecture
 
+### Training
+
+```mermaid
+graph LR
+    puzzle["Puzzle (9x9)"] --> CE["Context Encoder<br/><i>6-layer Transformer</i>"]
+    CE --> z_ctx["z_context"]
+    z_ctx --> P["Predictor<br/><i>3-layer MLP</i>"]
+    z["z ~ N(0, I)"] --> P
+    P --> z_pred["z_pred"]
+
+    solution["Solution (9x9)"] --> TE["Target Encoder<br/><i>EMA of Context Encoder</i>"]
+    TE --> z_tgt["z_target"]
+
+    z_pred -. "Energy = ‖z_pred − z_target‖²" .-> z_tgt
+
+    z_ctx --> D["Decoder<br/><i>2-layer Transformer</i>"]
+    z --> D
+    D --> logits["Cell Logits (9x9x9)"]
+    logits -. "CE loss<br/>(empty cells only)" .-> solution
+
+    style z_pred fill:#4a9eff,color:#fff
+    style z_tgt fill:#4a9eff,color:#fff
+    style z_ctx fill:#6bcb77,color:#fff
 ```
-Training:
-  puzzle ──> Context Encoder ──> z_context ──┐
-                                              ├──> Predictor ──> z_pred
-  z ~ N(0,I) ────────────────────────────────┘         |
-                                                       v
-  solution ──> Target Encoder (EMA) ──> z_target    Energy = ||z_pred - z_target||^2
 
-  (z, z_context) ──> Decoder ──> cell logits        Auxiliary CE loss
+### Inference (Langevin Dynamics)
 
-Inference (Langevin dynamics):
-  puzzle ──> Context Encoder ──> z_context
-  z_0 ~ N(0,I)
-  for t in 1..T:
-      z_t = z_{t-1} - lr * grad_z(E(z, z_context)) + noise
-  decode(z_T, z_context) ──> 9x9 solution
+```mermaid
+graph LR
+    puzzle["Puzzle (9x9)"] --> CE["Context Encoder"]
+    CE --> z_ctx["z_context"]
+
+    init["z₀ ~ N(0, I)"] --> loop
+
+    subgraph loop ["Iterate T steps"]
+        direction TB
+        energy["E(z, z_context)"] --> grad["∇z Energy"]
+        grad --> update["z ← z − η∇E + noise"]
+    end
+
+    z_ctx --> loop
+    loop --> D["Decoder"]
+    z_ctx --> D
+    D --> sol["9x9 Solution"]
+
+    style loop fill:#fff3e0,stroke:#ff9800
+    style sol fill:#4a9eff,color:#fff
 ```
 
 ### Components
@@ -45,13 +76,13 @@ Inference (Langevin dynamics):
 
 ### Loss Function
 
-```
-L_total = L_energy + L_vicreg + L_decode
+$$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{energy}} + \mathcal{L}_{\text{VICReg}} + \mathcal{L}_{\text{decode}}$$
 
-L_energy  = ||z_pred - z_target||^2           (drives representation learning)
-L_vicreg  = variance + covariance penalty     (prevents representation collapse, applied to z_context)
-L_decode  = cross-entropy on empty cells only  (auxiliary decoder supervision)
-```
+| Term | Formula | Purpose |
+|------|---------|---------|
+| $\mathcal{L}_{\text{energy}}$ | $\|\|z_{\text{pred}} - z_{\text{target}}\|\|^2$ | Drives representation learning |
+| $\mathcal{L}_{\text{VICReg}}$ | Variance + covariance penalty on $z_{\text{context}}$ | Prevents representation collapse |
+| $\mathcal{L}_{\text{decode}}$ | Cross-entropy on empty cells only | Auxiliary decoder supervision |
 
 ### Inference
 
