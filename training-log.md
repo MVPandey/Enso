@@ -92,19 +92,35 @@ Fixed by adding a `z_encoder` (linear projection from d_model → d_latent). Dur
 - Decode loss weight=1.0 — gives the decoder enough gradient signal
 - Cosine LR decay after warmup — smooth training progression
 
+### Inference Evaluation
+
+Ran the Langevin dynamics solver on 1K test puzzles (50 steps, 8 chains):
+
+| Metric | Forward Pass | Langevin Solver |
+|--------|-------------|-----------------|
+| Cell accuracy | 97.2% | 96.5% |
+| Puzzle accuracy | 74.7% | 70.7% |
+| Constraint satisfaction | — | 92.9% |
+
+The solver made things **worse**. Diagnostics revealed why:
+
+**The decoder barely uses z.** `z_encoder(z_target)` has L2 norm ~144, but `noise_scale=1.0` adds noise with norm ~11. During training, z ≈ z_encoder(z_target) with <8% noise — the decoder learned z as a near-deterministic lookup of the solution, not a variable to reason over. It relies on z_context for ~96% cell accuracy and z for a marginal ~1% improvement.
+
+**Langevin dynamics does nothing.** Over 50 steps, z_norm changed from 11.29 to 11.28. Gradient norm was ~0.52, so each step moved z by `lr * 0.52 = 0.005` — a 0.04% change. Cell accuracy was flat at 95.2% throughout. The solver can't improve solutions because the decoder is insensitive to z.
+
+**Chain selection by energy hurts.** The 8 chains produce nearly identical outputs (since z barely matters), but chain selection uses `||z_pred||² + constraint_penalty`, which doesn't correlate well with actual accuracy. It occasionally picks a slightly worse chain.
+
 ### Next Steps
 
-**Inference evaluation.** The 97.2% cell / 74.7% puzzle numbers are forward-pass decode accuracy — a single pass through the decoder with random z. The Langevin dynamics solver (iterative refinement over 50+ steps with constraint penalties) hasn't been run yet. This should meaningfully boost puzzle accuracy since the solver can correct individual cell errors by optimizing z against Sudoku constraints.
+**Fix z_encoder magnitude (critical).** The root cause is z_encoder outputting high-norm vectors that drown out noise. L2-normalizing z_encoder output would force z_target_latent to unit norm, making noise_scale=1.0 actually corrupt ~50% of the signal. The decoder would have to genuinely use z while being robust to noise — exactly what Langevin dynamics needs.
 
-**Learning rate tuning.** Accuracy plateaued after epoch 15 with cosine decay from 3e-4. A second training phase with lower LR (e.g. 1e-4 or 5e-5) could push past the plateau. Alternatively, try a longer warmup or different schedule.
+**Learning rate tuning.** Accuracy plateaued after epoch 15 with cosine decay from 3e-4. A second training phase with lower LR (e.g. 1e-4 or 5e-5) could push past the plateau.
 
 **More epochs.** 20 epochs may not be enough — the curve was still climbing (slowly) at epoch 19. Running 50 epochs at reduced LR could squeeze out a few more points.
 
-**z_noise_scale sweep.** Currently fixed at 1.0. Lower noise (0.3-0.5) means z carries more solution info during training, potentially making the predictor/decoder rely on z more heavily. Higher noise (1.5-2.0) makes training harder but could improve robustness at inference when z starts from pure noise. Worth sweeping.
+**Difficulty-stratified evaluation.** Kona's 96.2% is specifically on hard puzzles. Our validation set is mixed difficulty. Need to stratify by number of given clues to get a fair comparison.
 
-**Difficulty-stratified evaluation.** Kona's 96.2% is specifically on hard puzzles. Our validation set is mixed difficulty. Need to stratify by number of given clues to get a fair comparison — easy puzzles (35+ clues) inflate our numbers, hard puzzles (17-25 clues) are the real test.
-
-**Decoder capacity.** The decoder is a lightweight 2-layer Transformer. The forward-pass accuracy ceiling might be limited by decoder capacity. Trying 3-4 layers or larger d_cell could help, though this would slow inference.
+**Decoder capacity.** The decoder is a lightweight 2-layer Transformer. Trying 3-4 layers or larger d_cell could help, though this would slow inference.
 
 ---
 
@@ -113,8 +129,8 @@ Fixed by adding a `z_encoder` (linear projection from d_model → d_latent). Dur
 ### Representation collapse is the primary failure mode
 Without VICReg on the right tensor, the encoder maps everything to a single point. Energy goes to zero (trivially correct), but nothing is learned. Monitor z_variance as a collapse detector.
 
-### The latent variable must carry information during training
-Random z teaches the model to ignore z entirely. Making z a noisy projection of z_target means the predictor and decoder learn to use z, and Langevin dynamics has meaningful gradients at inference time. This was the single biggest architectural fix.
+### The latent variable must carry information during training — but not too much
+Random z teaches the model to ignore z entirely. Making z a noisy projection of z_target means the predictor and decoder learn to use z. But if the projection has high magnitude and noise is relatively small, z becomes a near-deterministic lookup of the answer. The decoder still mostly ignores the z "variable" and just reads the z "code." The noise must meaningfully corrupt z so the model learns to reason with partial information, not just decode a lookup.
 
 ### Loss decomposition matters
 A decreasing total loss can hide complete failure. The decode loss "improved" because given cells were trivially correct, masking the fact that empty cells learned nothing. Always decompose losses and check each component independently.
