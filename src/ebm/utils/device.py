@@ -31,7 +31,7 @@ def get_gpu_vram_gb() -> float | None:
     """
     if not torch.cuda.is_available():
         return None
-    return torch.cuda.get_device_properties(0).total_mem / (1024**3)
+    return torch.cuda.get_device_properties(0).total_memory / (1024**3)
 
 
 def resolve_batch_size(vram_gb: float) -> int:

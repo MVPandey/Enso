@@ -23,7 +23,7 @@ class TestGetGpuVramGb:
     def test_returns_vram_with_cuda(self):
         with patch('ebm.utils.device.torch.cuda') as mock_cuda:
             mock_cuda.is_available.return_value = True
-            mock_props = type('Props', (), {'total_mem': 80 * 1024**3})()
+            mock_props = type('Props', (), {'total_memory': 80 * 1024**3})()
             mock_cuda.get_device_properties.return_value = mock_props
             result = get_gpu_vram_gb()
             assert result == pytest.approx(80.0, abs=0.1)
