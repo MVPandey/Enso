@@ -13,9 +13,11 @@ from ebm.training.metrics import (
     compute_cell_accuracy,
     compute_puzzle_accuracy,
     compute_z_variance,
+    finish_wandb,
     init_wandb,
     log_train_step,
     log_validation,
+    upload_checkpoint_to_wandb,
 )
 from ebm.training.scheduler import create_lr_scheduler, get_ema_momentum
 from ebm.utils.config import ArchitectureConfig, Config, TrainingConfig
@@ -103,6 +105,11 @@ class Trainer:
                 'Epoch %d | train_loss=%.4f | val_energy=%.4f | cell_acc=%.4f | puzzle_acc=%.4f',
                 epoch, train_loss, val_energy, cell_acc, puzzle_acc,
             )
+
+        best = self.checkpoint_mgr.best_path
+        if best:
+            upload_checkpoint_to_wandb(best)
+        finish_wandb()
 
     def _train_epoch(self) -> float:
         """

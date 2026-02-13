@@ -84,6 +84,13 @@ class CheckpointManager:
 
         return None
 
+    @property
+    def best_path(self) -> Path | None:
+        """Return the path of the highest-accuracy checkpoint, or None if empty."""
+        if not self._heap:
+            return None
+        return max(self._heap).path
+
     @staticmethod
     def _write(data: _CheckpointData, path: Path) -> None:
         """Write checkpoint dict to disk."""

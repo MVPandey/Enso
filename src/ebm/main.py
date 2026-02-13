@@ -16,6 +16,7 @@ from ebm.model.jepa import InferenceConfig, SudokuJEPA
 from ebm.training.checkpoint import CheckpointManager
 from ebm.training.trainer import Trainer, TrainerConfig
 from ebm.utils.config import ArchitectureConfig, Config, TrainingConfig
+from ebm.utils.device import auto_scale_config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -34,9 +35,9 @@ def train(args: argparse.Namespace) -> None:
     train_cfg = TrainingConfig()
 
     if args.epochs:
-        train_cfg = TrainingConfig(epochs=args.epochs)
-    if args.batch_size:
-        train_cfg = TrainingConfig(epochs=train_cfg.epochs, batch_size=args.batch_size)
+        train_cfg = train_cfg.model_copy(update={'epochs': args.epochs})
+
+    train_cfg = auto_scale_config(train_cfg, batch_size_override=args.batch_size)
 
     logger.info('Loading dataset...')
     ds = SudokuDataset()

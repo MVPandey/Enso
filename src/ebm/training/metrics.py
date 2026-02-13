@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 from torch import Tensor
 
@@ -106,6 +107,33 @@ def log_validation(
         },
         step=step,
     )
+
+
+def upload_checkpoint_to_wandb(checkpoint_path: Path) -> None:
+    """
+    Upload a checkpoint file as a W&B model artifact.
+
+    Args:
+        checkpoint_path: Path to the checkpoint .pt file.
+
+    """
+    if not _wandb_available or wandb.run is None:
+        return
+
+    artifact = wandb.Artifact(
+        name=f'model-{wandb.run.id}',
+        type='model',
+    )
+    artifact.add_file(str(checkpoint_path))
+    wandb.log_artifact(artifact)
+    logger.info('Uploaded checkpoint to W&B: %s', checkpoint_path.name)
+
+
+def finish_wandb() -> None:
+    """Finalize the W&B run, ensuring all artifacts are uploaded."""
+    if not _wandb_available or wandb.run is None:
+        return
+    wandb.finish()
 
 
 def compute_cell_accuracy(pred: Tensor, target: Tensor, mask: Tensor) -> float:

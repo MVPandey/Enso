@@ -37,6 +37,21 @@ def test_rejects_worse_than_top_k(tmp_path):
     assert path is None
 
 
+def test_best_path_empty(tmp_path):
+    mgr = CheckpointManager(tmp_path, keep_top_k=3)
+    assert mgr.best_path is None
+
+
+def test_best_path_returns_highest_accuracy(tmp_path):
+    mgr = CheckpointManager(tmp_path, keep_top_k=3)
+    mgr.save(_make_data(epoch=0, cell_accuracy=0.3))
+    mgr.save(_make_data(epoch=1, cell_accuracy=0.8))
+    mgr.save(_make_data(epoch=2, cell_accuracy=0.5))
+    best = mgr.best_path
+    assert best is not None
+    assert 'acc0.8000' in best.name
+
+
 def test_load_restores_model(tmp_path):
     mgr = CheckpointManager(tmp_path, keep_top_k=3)
     data = _make_data(epoch=5, cell_accuracy=0.5)
