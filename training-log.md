@@ -124,6 +124,72 @@ The solver made things **worse**. Diagnostics revealed why:
 
 ---
 
+## Run 3: Larger Batch + Scaled LR (9M samples, 20 epochs)
+
+**Date:** Feb 14, 2026
+**Config:** 9M samples (8M train / 500K val), batch_size=2048, 20 epochs, lr=6e-4
+**Hardware:** RTX 5090
+**Duration:** ~7 hours (~21 min/epoch)
+
+### Changes for This Run
+
+**Auto-scaling batch size and LR from GPU VRAM.** Added `auto_scale_config()` which detects available VRAM, selects the largest feasible batch size (capped at 2048), and scales the learning rate using the square-root rule: `lr = 3e-4 * sqrt(batch_size / 512)`. With batch_size=2048, this gives lr=6e-4.
+
+**Best checkpoint auto-uploaded to W&B.** After training completes, the highest-accuracy checkpoint is uploaded as a W&B model artifact.
+
+### Results
+
+| Epoch | Cell Acc | Puzzle Acc | Train Loss | Val Energy |
+|-------|----------|------------|------------|------------|
+| 0 | 43.8% | 0.0% | 9.49 | 4.62 |
+| 1 | 73.4% | 0.7% | 9.58 | 7.30 |
+| 2 | 87.6% | 19.1% | 8.36 | 9.10 |
+| 5 | 95.3% | 61.1% | 8.65 | 4.78 |
+| 10 | 97.5% | 76.6% | 6.76 | 3.12 |
+| 15 | 98.2% | 82.8% | 5.13 | 3.40 |
+| 19 | **98.3%** | **83.8%** | 5.29 | 4.03 |
+
+### Comparison with Run 2
+
+| Metric | Run 2 (bs=512, lr=3e-4) | Run 3 (bs=2048, lr=6e-4) | Delta |
+|--------|------------------------|--------------------------|-------|
+| Cell accuracy | 97.2% | **98.3%** | +1.1% |
+| Puzzle accuracy | 74.7% | **83.8%** | +9.1% |
+| Train loss (final) | 9.46 | 5.29 | -4.17 |
+| Val energy (final) | 8.49 | 4.03 | -4.46 |
+
+The larger batch + sqrt-scaled LR significantly improved both metrics. Train loss and val energy both decreased substantially compared to Run 2, suggesting the model found a better optimum.
+
+### Inference Evaluation
+
+Ran Langevin dynamics on 500 test puzzles (100 steps, 16 chains):
+
+| Metric | Forward Pass | Langevin Solver |
+|--------|-------------|-----------------|
+| Cell accuracy | 98.3% | 97.5% |
+| Puzzle accuracy | 83.8% | 81.0% |
+| Constraint satisfaction | — | 95.6% |
+
+**Same pattern as Run 2 — Langevin dynamics makes things worse.** Constraint satisfaction improved (95.6% vs 92.9% in Run 2), showing the model's raw outputs are more structurally valid, but the solver still can't improve solutions.
+
+### Root Cause Analysis: Why Langevin Dynamics Fails
+
+Three structural issues identified across Runs 2 and 3:
+
+**1. z_encoder magnitude makes z a lookup table.** `z_encoder(z_target)` has L2 norm ~144 while noise has norm ~11 (<8% of signal). The decoder learned z as a near-deterministic encoding of the answer, not a variable to reason over. L2-normalizing z_encoder output would force unit norm, making noise_scale=1.0 corrupt ~50% of the signal.
+
+**2. Inference energy is disconnected from training.** Training energy = `||z_pred - z_target||²` (meaningful). Inference uses `||z_pred||²` (assumes z_target ≈ 0, which is false). This provides misleading gradients that fight against the constraint penalty. Fix: self-consistency energy — decode the solution, re-encode through the target encoder, compare with z_pred: `||z_pred - target_encoder(decode(z))||²`.
+
+**3. Model doesn't know Sudoku rules during training.** The constraint penalty is only used at inference. The model learns Sudoku implicitly via cross-entropy on correct cells but never sees explicit constraint signals. Adding a constraint loss during training teaches the decoder that outputs must satisfy row/column/box uniqueness.
+
+### Changes Implemented for Next Run
+
+1. **L2-normalize z_encoder output** — `F.normalize(self.z_encoder(z_target), dim=-1)` before adding noise
+2. **Constraint loss during training** — `constraint_penalty(softmax(decode_logits)).mean()` added to total loss with weight 0.1
+3. **Self-consistency inference energy** — replaced `||z_pred||²` with decode→re-encode cycle: `||z_pred - target_encoder(softmax(logits))||² + constraint_penalty`
+
+---
+
 ## Key Lessons
 
 ### Representation collapse is the primary failure mode

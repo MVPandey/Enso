@@ -70,6 +70,7 @@ def log_train_step(loss_out: LossOutput, lr: float, ema_momentum: float, step: i
             'train/loss_energy': loss_out.energy.item(),
             'train/loss_vicreg': loss_out.vicreg.item(),
             'train/loss_decode': loss_out.decode.item(),
+            'train/loss_constraint': loss_out.constraint.item(),
             'train/lr': lr,
             'train/ema_momentum': ema_momentum,
         },

@@ -7,8 +7,12 @@ def _make_data(epoch: int = 0, val_energy: float = 1.0, cell_accuracy: float = 0
     model = torch.nn.Linear(4, 4)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
     return _CheckpointData(
-        model=model, optimizer=optimizer, epoch=epoch, step=0,
-        val_energy=val_energy, cell_accuracy=cell_accuracy,
+        model=model,
+        optimizer=optimizer,
+        epoch=epoch,
+        step=0,
+        val_energy=val_energy,
+        cell_accuracy=cell_accuracy,
     )
 
 

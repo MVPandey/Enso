@@ -48,6 +48,7 @@ def test_compute_loss_components_positive():
     result = compute_loss(out, _make_solution(b=8), _make_mask(b=8), TrainingConfig())
     assert result.energy > 0
     assert result.decode > 0
+    assert result.constraint >= 0
 
 
 def test_compute_loss_gradient_flows():

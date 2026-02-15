@@ -6,10 +6,13 @@ from torch import Tensor
 _GROUPS: list[list[int]] = []
 _GROUPS.extend([list(range(row * 9, row * 9 + 9)) for row in range(9)])
 _GROUPS.extend([list(range(col, 81, 9)) for col in range(9)])
-_GROUPS.extend([
-    [(box_r * 3 + dr) * 9 + box_c * 3 + dc for dr in range(3) for dc in range(3)]
-    for box_r in range(3) for box_c in range(3)
-])
+_GROUPS.extend(
+    [
+        [(box_r * 3 + dr) * 9 + box_c * 3 + dc for dr in range(3) for dc in range(3)]
+        for box_r in range(3)
+        for box_c in range(3)
+    ]
+)
 
 GROUP_INDICES = torch.tensor(_GROUPS, dtype=torch.long)
 

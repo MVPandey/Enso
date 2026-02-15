@@ -92,18 +92,24 @@ class Trainer:
             val_energy, cell_acc, puzzle_acc, z_var = self._validate()
 
             log_validation(val_energy, cell_acc, puzzle_acc, z_var, self.global_step)
-            self.checkpoint_mgr.save(_CheckpointData(
-                model=self.model,
-                optimizer=self.optimizer,
-                epoch=epoch,
-                step=self.global_step,
-                val_energy=val_energy,
-                cell_accuracy=cell_acc,
-            ))
+            self.checkpoint_mgr.save(
+                _CheckpointData(
+                    model=self.model,
+                    optimizer=self.optimizer,
+                    epoch=epoch,
+                    step=self.global_step,
+                    val_energy=val_energy,
+                    cell_accuracy=cell_acc,
+                )
+            )
 
             logger.info(
                 'Epoch %d | train_loss=%.4f | val_energy=%.4f | cell_acc=%.4f | puzzle_acc=%.4f',
-                epoch, train_loss, val_energy, cell_acc, puzzle_acc,
+                epoch,
+                train_loss,
+                val_energy,
+                cell_acc,
+                puzzle_acc,
             )
 
         best = self.checkpoint_mgr.best_path

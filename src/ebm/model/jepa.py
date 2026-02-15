@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 import torch
+import torch.nn.functional as F
 from torch import Tensor, nn
 
 from ebm.model.constraints import constraint_penalty
@@ -128,7 +129,7 @@ class SudokuJEPA(nn.Module):
         with torch.no_grad():
             z_target = self.target_encoder(solution.permute(0, 3, 1, 2))
 
-        z_target_latent = self.z_encoder(z_target)
+        z_target_latent = F.normalize(self.z_encoder(z_target), dim=-1)
         z = z_target_latent + self.train_cfg.z_noise_scale * torch.randn_like(z_target_latent)
 
         z_pred = self.predictor(z_context, z)
@@ -183,14 +184,18 @@ class SudokuJEPA(nn.Module):
             z = z.detach().requires_grad_(True)
             for step in range(inference_cfg.n_steps):
                 z_pred = self.predictor(z_context_exp, z)
-                latent_energy = (z_pred**2).sum(dim=-1)
 
                 logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)
                 probs = torch.softmax(logits, dim=-1)
+
+                # Self-consistency: decode → re-encode → compare with z_pred
+                z_target_est = self.target_encoder(probs.permute(0, 3, 1, 2))
+                self_consistency = ((z_pred - z_target_est) ** 2).sum(dim=-1)
+
                 c_penalty = constraint_penalty(probs)
 
                 temp = 1.0 - step / max(inference_cfg.n_steps, 1)
-                total_energy = latent_energy + c_penalty * (1.0 + 2.0 * (1.0 - temp))
+                total_energy = self_consistency + c_penalty * (1.0 + 2.0 * (1.0 - temp))
 
                 grad_z = torch.autograd.grad(total_energy.sum(), z)[0]
                 noise = inference_cfg.noise_scale * temp * torch.randn_like(z)

@@ -60,12 +60,18 @@ def train(args: argparse.Namespace) -> None:
     val_ds = SudokuTorchDataset(val_df)
 
     train_loader = DataLoader(
-        train_ds, batch_size=train_cfg.batch_size, shuffle=True,
-        num_workers=train_cfg.num_workers, pin_memory=train_cfg.pin_memory,
+        train_ds,
+        batch_size=train_cfg.batch_size,
+        shuffle=True,
+        num_workers=train_cfg.num_workers,
+        pin_memory=train_cfg.pin_memory,
     )
     val_loader = DataLoader(
-        val_ds, batch_size=train_cfg.batch_size, shuffle=False,
-        num_workers=train_cfg.num_workers, pin_memory=train_cfg.pin_memory,
+        val_ds,
+        batch_size=train_cfg.batch_size,
+        shuffle=False,
+        num_workers=train_cfg.num_workers,
+        pin_memory=train_cfg.pin_memory,
     )
 
     model = SudokuJEPA(arch_cfg, train_cfg)
@@ -105,8 +111,11 @@ def eval_model(args: argparse.Namespace) -> None:
 
     test_ds = SudokuTorchDataset(test_df)
     test_loader = DataLoader(
-        test_ds, batch_size=train_cfg.batch_size, shuffle=False,
-        num_workers=train_cfg.num_workers, pin_memory=train_cfg.pin_memory,
+        test_ds,
+        batch_size=train_cfg.batch_size,
+        shuffle=False,
+        num_workers=train_cfg.num_workers,
+        pin_memory=train_cfg.pin_memory,
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

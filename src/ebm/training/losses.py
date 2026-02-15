@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
+from ebm.model.constraints import constraint_penalty
 from ebm.model.jepa import JEPAOutput
 from ebm.utils.config import TrainingConfig
 
@@ -18,6 +19,7 @@ class LossOutput:
     energy: Tensor
     vicreg: Tensor
     decode: Tensor
+    constraint: Tensor
 
 
 def vicreg_loss(z: Tensor, var_weight: float = 25.0, cov_weight: float = 1.0) -> Tensor:
@@ -76,6 +78,9 @@ def compute_loss(out: JEPAOutput, solution: Tensor, mask: Tensor, cfg: TrainingC
     empty = mask == 0
     decode_loss = F.cross_entropy(out.decode_logits[empty], targets[empty])
 
-    total = energy_loss + vreg + cfg.decode_loss_weight * decode_loss
+    decode_probs = torch.softmax(out.decode_logits, dim=-1)
+    constraint_loss = constraint_penalty(decode_probs).mean()
 
-    return LossOutput(total=total, energy=energy_loss, vicreg=vreg, decode=decode_loss)
+    total = energy_loss + vreg + cfg.decode_loss_weight * decode_loss + cfg.constraint_loss_weight * constraint_loss
+
+    return LossOutput(total=total, energy=energy_loss, vicreg=vreg, decode=decode_loss, constraint=constraint_loss)
