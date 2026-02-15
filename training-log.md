@@ -176,7 +176,7 @@ Ran Langevin dynamics on 500 test puzzles (100 steps, 16 chains):
 
 Three structural issues identified across Runs 2 and 3:
 
-**1. z_encoder magnitude makes z a lookup table.** `z_encoder(z_target)` has L2 norm ~144 while noise has norm ~11 (<8% of signal). The decoder learned z as a near-deterministic encoding of the answer, not a variable to reason over. L2-normalizing z_encoder output would force unit norm, making noise_scale=1.0 corrupt ~50% of the signal.
+**1. z_encoder magnitude makes z a lookup table.** `z_encoder(z_target)` has L2 norm ~144 while noise has norm ~11 (<8% of signal). The decoder learned z as a near-deterministic encoding of the answer, not a variable to reason over. Fix: L2-normalize z_encoder output to unit norm AND reduce `z_noise_scale` to 0.1, giving noise L2 ≈ 1.13 for ~1:1 SNR. (Note: normalizing alone with scale=1.0 would swing to the opposite extreme — noise L2 ≈ 11.3 vs signal 1.0, SNR 0.09:1 — and the model would learn to ignore z.)
 
 **2. Inference energy is disconnected from training.** Training energy = `||z_pred - z_target||²` (meaningful). Inference uses `||z_pred||²` (assumes z_target ≈ 0, which is false). This provides misleading gradients that fight against the constraint penalty. Fix: self-consistency energy — decode the solution, re-encode through the target encoder, compare with z_pred: `||z_pred - target_encoder(decode(z))||²`.
 
@@ -184,7 +184,7 @@ Three structural issues identified across Runs 2 and 3:
 
 ### Changes Implemented for Next Run
 
-1. **L2-normalize z_encoder output** — `F.normalize(self.z_encoder(z_target), dim=-1)` before adding noise
+1. **L2-normalize z_encoder output + rescale noise** — `F.normalize(self.z_encoder(z_target), dim=-1)` forces unit-norm z. Reduced `z_noise_scale` from 1.0 to 0.1 so noise L2 ≈ 1.13 (≈ `0.1 * √128`), giving ~1:1 SNR. Without this rescale, noise L2 ≈ 11.3 would drown out the unit-norm signal (SNR 0.09:1) and the model would learn to ignore z — the same failure from the opposite direction.
 2. **Constraint loss during training** — `constraint_penalty(softmax(decode_logits)).mean()` added to total loss with weight 0.1
 3. **Self-consistency inference energy** — replaced `||z_pred||²` with decode→re-encode cycle: `||z_pred - target_encoder(softmax(logits))||² + constraint_penalty`
 
