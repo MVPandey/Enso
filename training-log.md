@@ -80,6 +80,27 @@ Five critical bugs fixed before meaningful training: (1) solution tensor encodin
 
 ---
 
+## Run 5: Scaled Architecture (9M samples, 20 epochs) — IN PROGRESS
+
+**Date:** Feb 15-16 | **Hardware:** H200 (144GB) | **Config:** 9M samples, bs=2048, lr=6e-4 | **Duration:** ~22h
+
+**Changes:** Scaled architecture from 7.4M to 36.5M trainable parameters: d_model 256→512, encoder 6→8 layers, decoder 2→4 layers, d_latent 128→256, predictor hidden 512→1024, decoder d_cell 64→128.
+
+| Epoch | Cell Acc | Puzzle Acc |
+|-------|----------|------------|
+| 0 | 76.3% | 2.8% |
+| 1 | 94.7% | 65.5% |
+| 5 | 98.0% | 87.8% |
+| 10 | 98.9% | 93.6% |
+| 15 | 99.2% | 95.3% |
+| 17 | **99.3%** | **95.6%** |
+
+**vs Run 4:** Massive improvement from capacity alone — +1.7% cell, +13.1% puzzle at epoch 17 (vs Run 4 epoch 19). Model is still training (epoch 17/20) with accuracy still climbing.
+
+**Approaching Kona:** Forward-pass puzzle accuracy of 95.6% is within striking distance of Kona 1.0's 96.2% on hard puzzles, before Langevin dynamics inference is applied. In Run 4, Langevin added +1.0% — if the same holds here, final accuracy should reach ~96-97%.
+
+---
+
 ## Key Lessons
 
 - **Representation collapse is the primary failure mode.** Without VICReg on the right tensor (`z_context`, not `z_pred`), encoders collapse to a point. Monitor z_variance.

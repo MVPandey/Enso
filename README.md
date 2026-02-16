@@ -1,6 +1,10 @@
 # Enso
 
-An open-source replication of [Logical Intelligence's Kona 1.0](https://sudoku.logicalintelligence.com/) — an Energy-Based Model that solves Sudoku through latent reasoning. Kona achieved [96.2% accuracy on hard Sudoku](https://logicalintelligence.com/blog/energy-based-model-sudoku-demo) in ~313ms per puzzle, while frontier LLMs (GPT-5.2, Claude Opus 4.5, Gemini 3 Pro, DeepSeek V3.2) managed just 2% combined. This project implements the core idea: learn an energy landscape in representation space where valid solutions have low energy, then "think" at inference time by optimizing a latent variable via Langevin dynamics.
+An open-source replication of [Logical Intelligence's Kona 1.0](https://sudoku.logicalintelligence.com/) — an Energy-Based Model that solves Sudoku through latent reasoning. Kona achieved [96.2% accuracy on hard Sudoku](https://logicalintelligence.com/blog/energy-based-model-sudoku-demo) in ~313ms per puzzle, while frontier LLMs (GPT-5.2, Claude Opus 4.5, Gemini 3 Pro, DeepSeek V3.2) managed just 2% combined.
+
+**Current status: 95.6% puzzle accuracy at epoch 17/20, training still running.** On track to match Kona's 96.2% benchmark — with Langevin dynamics inference expected to push accuracy higher.
+
+This project implements the core idea: learn an energy landscape in representation space where valid solutions have low energy, then "think" at inference time by optimizing a latent variable via Langevin dynamics.
 
 ## Motivation
 
@@ -75,7 +79,7 @@ graph LR
 | **Target Encoder** | Same architecture, processes solutions. Updated via EMA from context encoder (no gradients). | EMA momentum 0.996 -> 1.0 |
 | **Predictor** | 3-layer MLP mapping (z_context, z) -> z_pred. Intentionally limited capacity so it can't ignore z. | hidden=1024 |
 | **Decoder** | 4-layer Transformer decoding (z_context, z) to per-cell digit logits. Hard-enforces given clues. | 8 heads, d_cell=128 |
-| **Total** | ~50M trainable parameters | |
+| **Total** | ~36.5M trainable parameters | |
 
 ### Loss Function
 
@@ -99,17 +103,20 @@ At inference time, the model solves puzzles through Langevin dynamics — gradie
 
 ## Results
 
-Trained on 9M puzzles (8M train / 500K val), 20 epochs per run on RTX 5090.
+Trained on 9M puzzles (8M train / 500K val), 20 epochs per run.
 
 ![Training Runs](assets/training_runs.png)
 
-| Run | Changes | Cell Acc | Puzzle Acc | Langevin Puzzle Acc |
-|-----|---------|----------|------------|---------------------|
-| Run 2 | Baseline (bs=512, lr=3e-4) | 97.2% | 74.7% | 70.7% (-4.0) |
-| Run 3 | Larger batch (bs=2048, lr=6e-4) | 98.3% | 83.8% | 81.0% (-2.8) |
-| Run 4 | + z normalization, constraint loss, self-consistency energy | 97.6% | 82.5% | **83.5% (+1.0)** |
+| Run | Config | Cell Acc | Puzzle Acc | Langevin Puzzle Acc |
+|-----|--------|----------|------------|---------------------|
+| Run 2 | 7.4M params, bs=512, RTX 5090 | 97.2% | 74.7% | 70.7% (-4.0) |
+| Run 3 | 7.4M params, bs=2048, RTX 5090 | 98.3% | 83.8% | 81.0% (-2.8) |
+| Run 4 | 7.4M + Langevin fixes, RTX 5090 | 97.6% | 82.5% | 83.5% (+1.0) |
+| **Run 5** | **36.5M params, bs=2048, H200** | **99.3%** | **95.6%** | **training (epoch 17/20)** |
 
-**Key milestone in Run 4:** Langevin dynamics improved puzzle accuracy for the first time (+1.0%), after consistently hurting results in prior runs. The three structural fixes (L2-normalized z_encoder, constraint loss during training, self-consistency inference energy) aligned the solver with what the model learned.
+Run 5 scaled the architecture from 7.4M to 36.5M parameters (d_model 256→512, encoder 6→8 layers, decoder 2→4 layers). At epoch 17 of 20, forward-pass puzzle accuracy is **95.6%** — approaching Kona's 96.2% benchmark before Langevin dynamics inference is even applied.
+
+In Run 4, Langevin dynamics added +1.0% to puzzle accuracy (the first time it improved results). With the larger model, the solver is expected to push final accuracy into Kona territory.
 
 Note: Kona's 96.2% is on hard puzzles specifically; our validation set includes all difficulty levels.
 
