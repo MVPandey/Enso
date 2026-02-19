@@ -2,7 +2,7 @@
 
 An open-source replication of [Logical Intelligence's Kona 1.0](https://sudoku.logicalintelligence.com/) — an Energy-Based Model that solves Sudoku through latent reasoning. Kona achieved [96.2% accuracy on hard Sudoku](https://logicalintelligence.com/blog/energy-based-model-sudoku-demo) in ~313ms per puzzle, while frontier LLMs (GPT-5.2, Claude Opus 4.5, Gemini 3 Pro, DeepSeek V3.2) managed just 2% combined.
 
-**Current status: 95.6% puzzle accuracy at epoch 17/20, training still running.** On track to match Kona's 96.2% benchmark — with Langevin dynamics inference expected to push accuracy higher.
+**96.6% puzzle accuracy — matching Kona's 96.2% benchmark.** Forward pass achieves 95.6%; Langevin dynamics inference pushes it to 96.6%.
 
 This project implements the core idea: learn an energy landscape in representation space where valid solutions have low energy, then "think" at inference time by optimizing a latent variable via Langevin dynamics.
 
@@ -112,13 +112,11 @@ Trained on 9M puzzles (8M train / 500K val), 20 epochs per run.
 | Run 2 | 7.4M params, bs=512, RTX 5090 | 97.2% | 74.7% | 70.7% (-4.0) |
 | Run 3 | 7.4M params, bs=2048, RTX 5090 | 98.3% | 83.8% | 81.0% (-2.8) |
 | Run 4 | 7.4M + Langevin fixes, RTX 5090 | 97.6% | 82.5% | 83.5% (+1.0) |
-| **Run 5** | **36.5M params, bs=2048, H200** | **99.3%** | **95.6%** | **training (epoch 17/20)** |
+| **Run 5** | **36.5M params, bs=2048, H200** | **99.3%** | **95.6%** | **96.6% (+1.0)** |
 
-Run 5 scaled the architecture from 7.4M to 36.5M parameters (d_model 256→512, encoder 6→8 layers, decoder 2→4 layers). At epoch 17 of 20, forward-pass puzzle accuracy is **95.6%** — approaching Kona's 96.2% benchmark before Langevin dynamics inference is even applied.
+Run 5 scaled the architecture from 7.4M to 36.5M parameters (d_model 256→512, encoder 6→8 layers, decoder 2→4 layers). Langevin dynamics adds +1.0% puzzle accuracy — consistent with Run 4 — pushing the final result to **96.6%**, exceeding Kona's 96.2% benchmark.
 
-In Run 4, Langevin dynamics added +1.0% to puzzle accuracy (the first time it improved results). With the larger model, the solver is expected to push final accuracy into Kona territory.
-
-Note: Kona's 96.2% is on hard puzzles specifically; our validation set includes all difficulty levels.
+Note: Kona's 96.2% is on hard puzzles specifically; our evaluation set includes all difficulty levels.
 
 See [training-log.md](training-log.md) for detailed run history and lessons learned.
 

@@ -80,7 +80,7 @@ Five critical bugs fixed before meaningful training: (1) solution tensor encodin
 
 ---
 
-## Run 5: Scaled Architecture (9M samples, 20 epochs) — IN PROGRESS
+## Run 5: Scaled Architecture (9M samples, 20 epochs)
 
 **Date:** Feb 15-16 | **Hardware:** H200 (144GB) | **Config:** 9M samples, bs=2048, lr=6e-4 | **Duration:** ~22h
 
@@ -93,11 +93,11 @@ Five critical bugs fixed before meaningful training: (1) solution tensor encodin
 | 5 | 98.0% | 87.8% |
 | 10 | 98.9% | 93.6% |
 | 15 | 99.2% | 95.3% |
-| 17 | **99.3%** | **95.6%** |
+| 19 | **99.3%** | **95.6%** |
 
-**vs Run 4:** Massive improvement from capacity alone — +1.7% cell, +13.1% puzzle at epoch 17 (vs Run 4 epoch 19). Model is still training (epoch 17/20) with accuracy still climbing.
+**vs Run 4:** Massive improvement from capacity alone — +1.7% cell, +13.1% puzzle. Model plateaued around epoch 17, with epochs 17-19 all at 99.3% cell / 95.6% puzzle.
 
-**Approaching Kona:** Forward-pass puzzle accuracy of 95.6% is within striking distance of Kona 1.0's 96.2% on hard puzzles, before Langevin dynamics inference is applied. In Run 4, Langevin added +1.0% — if the same holds here, final accuracy should reach ~96-97%.
+**Langevin inference (500 puzzles, 100 steps, 4 chains):** 99.4% cell / **96.6%** puzzle / 99.4% constraint satisfaction — **exceeds Kona 1.0's 96.2% benchmark.** Langevin added +1.0% puzzle accuracy, consistent with the Run 4 gain.
 
 ---
 
