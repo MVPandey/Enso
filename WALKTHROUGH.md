@@ -81,8 +81,8 @@ In Enso, the self-supervised signal is: **given a partial puzzle (the clues), pr
 
 An Energy-Based Model (EBM) assigns a scalar energy value to every possible configuration of its inputs. Low energy = compatible/correct configuration. High energy = incompatible/incorrect. The model learns an energy function $E(x, y)$ such that:
 
-$$E(\text{puzzle}, \text{correct\_solution}) \to \textbf{low energy}$$
-$$E(\text{puzzle}, \text{wrong\_solution}) \to \textbf{high energy}$$
+$$E(\text{puzzle},\ \text{correct solution}) \to \textbf{low energy}$$
+$$E(\text{puzzle},\ \text{wrong solution}) \to \textbf{high energy}$$
 
 The elegance of EBMs is that at inference time, you can **search for the lowest-energy configuration** using gradient descent. Given an input $x$, the model finds:
 
@@ -904,11 +904,11 @@ SudokuJEPA.solve(puzzle, mask):
 
 **$d_{\text{latent}} = 256$** — Latent variable $\mathbf{z}$ dimension, set to $d_{\text{model}} / 2$. This is the information bottleneck between the target encoder and the predictor/decoder. Too small ($< 64$) would lose critical solution information; too large ($= d_{\text{model}}$) would eliminate the bottleneck, making $\mathbf{z}$ a near-lossless copy. $d_{\text{model}} / 2$ halves the information while keeping the Langevin search space tractable — a random search in $\mathbb{R}^{256}$ is substantially easier than $\mathbb{R}^{512}$.
 
-**$\text{predictor\_hidden} = 1024$** — Predictor MLP hidden dimension, set to $2 \times d_{\text{model}}$. The predictor must be capacity-limited (to force reliance on $\mathbf{z}$), but not so small that it can't learn the prediction mapping. A single hidden layer of $2 \times d_{\text{model}}$ provides a $768 \to 1024 \to 512$ bottleneck that can approximate the mapping while remaining too shallow to ignore $\mathbf{z}$. The 3-layer depth (input → hidden → output) was chosen as the minimum that supports a residual connection.
+**`predictor_hidden` $= 1024$** — Predictor MLP hidden dimension, set to $2 \times d_{\text{model}}$. The predictor must be capacity-limited (to force reliance on $\mathbf{z}$), but not so small that it can't learn the prediction mapping. A single hidden layer of $2 \times d_{\text{model}}$ provides a $768 \to 1024 \to 512$ bottleneck that can approximate the mapping while remaining too shallow to ignore $\mathbf{z}$. The 3-layer depth (input → hidden → output) was chosen as the minimum that supports a residual connection.
 
-**$\text{decoder\_layers} = 4$** — Decoder depth, half the encoder. The decoder's job is simpler: unpack a compressed representation into per-cell predictions, guided by inter-cell attention for consistency. It doesn't need to build a holistic understanding from scratch. 4 layers provide enough refinement while keeping inference (Langevin dynamics, which calls the decoder every step) computationally tractable.
+**`decoder_layers` $= 4$** — Decoder depth, half the encoder. The decoder's job is simpler: unpack a compressed representation into per-cell predictions, guided by inter-cell attention for consistency. It doesn't need to build a holistic understanding from scratch. 4 layers provide enough refinement while keeping inference (Langevin dynamics, which calls the decoder every step) computationally tractable.
 
-**$\text{decoder\_d\_cell} = 128$** — Per-cell feature dimension in the decoder, $d_{\text{model}} / 4$. Each cell needs to represent a distribution over 9 digits — 128 dimensions is generous for this. The decoder processes 81 tokens of dimension 128, so Transformer attention cost is $O(81^2 \times 128)$, kept modest for the per-step Langevin calls.
+**`decoder_d_cell` $= 128$** — Per-cell feature dimension in the decoder, $d_{\text{model}} / 4$. Each cell needs to represent a distribution over 9 digits — 128 dimensions is generous for this. The decoder processes 81 tokens of dimension 128, so Transformer attention cost is $O(81^2 \times 128)$, kept modest for the per-step Langevin calls.
 
 ### Training
 
@@ -916,13 +916,13 @@ SudokuJEPA.solve(puzzle, mask):
 
 **$\eta = 6 \times 10^{-4}$** — Peak learning rate, auto-scaled from the base pair $(\eta_{\text{base}} = 3 \times 10^{-4}, B_{\text{base}} = 512)$ via the sqrt rule. $3 \times 10^{-4}$ is the standard AdamW learning rate (established by BERT, widely adopted). The sqrt scaling to $6 \times 10^{-4}$ for $B = 2048$ is conservative — linear scaling would give $1.2 \times 10^{-3}$, which risks instability with adaptive optimizers.
 
-**$\text{weight\_decay} = 0.01$** — AdamW L2 regularization. The standard default from the AdamW paper (Loshchilov & Hutter, 2019). With a large dataset (8M samples), the model isn't prone to overfitting, so weight decay serves primarily as a stability mechanism rather than a regularizer.
+**`weight_decay` $= 0.01$** — AdamW L2 regularization. The standard default from the AdamW paper (Loshchilov & Hutter, 2019). With a large dataset (8M samples), the model isn't prone to overfitting, so weight decay serves primarily as a stability mechanism rather than a regularizer.
 
-**$\text{warmup\_steps} = 2000$** — Linear LR warmup. Prevents catastrophic updates in early training when weights are random and gradients are large/noisy. 2000 steps corresponds to ~1 epoch at $B = 2048$ with 8M samples ($8M / 2048 \approx 3900$ steps/epoch), giving roughly half an epoch of warmup. This is in the standard range (0.5-2 epochs) for Transformer training.
+**`warmup_steps` $= 2000$** — Linear LR warmup. Prevents catastrophic updates in early training when weights are random and gradients are large/noisy. 2000 steps corresponds to ~1 epoch at $B = 2048$ with 8M samples ($8M / 2048 \approx 3900$ steps/epoch), giving roughly half an epoch of warmup. This is in the standard range (0.5-2 epochs) for Transformer training.
 
 **$\text{epochs} = 20$** — Training duration. Empirically determined: Run 5 plateaued at epoch 17 (99.3% cell / 95.6% puzzle for epochs 17-19), indicating convergence. More epochs would provide negligible improvement with cosine-decayed LR near zero.
 
-**$\text{grad\_clip\_norm} = 1.0$** — Gradient clipping. Standard safety measure for Transformer training that prevents occasional large gradients (from unlucky batches or numerical instabilities) from causing catastrophic parameter updates. 1.0 is the most common choice (used by GPT-2, T5, etc.).
+**`grad_clip_norm` $= 1.0$** — Gradient clipping. Standard safety measure for Transformer training that prevents occasional large gradients (from unlucky batches or numerical instabilities) from causing catastrophic parameter updates. 1.0 is the most common choice (used by GPT-2, T5, etc.).
 
 **$m \in [0.996, 1.0]$** — EMA momentum schedule. $m_0 = 0.996$ corresponds to an effective averaging window of $1/(1-m) = 250$ steps. This is fast enough to track early learning while providing smoothing. The linear increase to $1.0$ gradually freezes the target encoder, following the BYOL (Grill et al., 2020) and I-JEPA convention. Alternative schedules (cosine) showed no significant difference in preliminary experiments.
 
