@@ -88,7 +88,7 @@ The elegance of EBMs is that at inference time, you can **search for the lowest-
 
 $$y^* = \arg\min_y E(x, y)$$
 
-Unlike a feedforward model that produces a single answer in one pass, an EBM can iteratively refine a candidate solution by following the energy gradient $\nabla_y E(x, y)$ downhill.
+Unlike a feedforward model that produces a single answer in one pass, an EBM can iteratively refine a candidate solution by following the energy gradient $\nabla\_y E(x, y)$ downhill.
 
 This is exactly what the brain seems to do: rather than computing an answer in a single pass, we "think about it" — iteratively evaluating and adjusting candidate solutions until we reach one that satisfies all constraints.
 
@@ -99,15 +99,15 @@ JEPA, introduced by Yann LeCun and formalized in the [I-JEPA paper](https://arxi
 Why not predict in data space directly? Because data space is enormous and full of irrelevant variation. Two correct Sudoku solutions that differ only in the ordering of equivalent digits are fundamentally identical — but in raw data space, they look completely different. By mapping inputs to a learned representation space and making predictions there, the model can focus on the abstract structure that matters.
 
 JEPA has three main components:
-1. **Context encoder** $f_\theta$: Encodes the observable input (puzzle) to a representation $\mathbf{z}_{\text{context}} = f_\theta(\text{puzzle})$
-2. **Target encoder** $\bar{f}_\theta$: Encodes the target (solution) to a representation $\mathbf{z}_{\text{target}} = \bar{f}_\theta(\text{solution})$
-3. **Predictor** $g_\phi$: Maps $(\mathbf{z}_{\text{context}}, \mathbf{z}) \to \mathbf{z}_{\text{pred}}$, trained so that $\mathbf{z}_{\text{pred}} \approx \mathbf{z}_{\text{target}}$
+1. **Context encoder** $f\_\theta$: Encodes the observable input (puzzle) to a representation $\mathbf{z}\_{\text{context}} = f\_\theta(\text{puzzle})$
+2. **Target encoder** $\bar{f}\_\theta$: Encodes the target (solution) to a representation $\mathbf{z}\_{\text{target}} = \bar{f}\_\theta(\text{solution})$
+3. **Predictor** $g\_\phi$: Maps $(\mathbf{z}\_{\text{context}}, \mathbf{z}) \to \mathbf{z}\_{\text{pred}}$, trained so that $\mathbf{z}\_{\text{pred}} \approx \mathbf{z}\_{\text{target}}$
 
 The energy is simply the squared $L^2$ distance between the predicted and target representations:
 
 $$E(\mathbf{z}_{\text{pred}}, \mathbf{z}_{\text{target}}) = \|\mathbf{z}_{\text{pred}} - \mathbf{z}_{\text{target}}\|_2^2$$
 
-At inference time, we don't have $\mathbf{z}_{\text{target}}$ (we don't know the solution), so we use Langevin dynamics to search for a latent variable $\mathbf{z}$ that minimizes the energy.
+At inference time, we don't have $\mathbf{z}\_{\text{target}}$ (we don't know the solution), so we use Langevin dynamics to search for a latent variable $\mathbf{z}$ that minimizes the energy.
 
 Enso draws from three key papers:
 - **I-JEPA** (CVPR 2023): The foundational JEPA framework for self-supervised learning
@@ -121,15 +121,15 @@ Enso draws from three key papers:
 Enso's architecture has two distinct modes: **training** and **inference**.
 
 **During training**, the model sees both the puzzle and the solution:
-1. The **context encoder** $f_\theta$ processes the puzzle $\to \mathbf{z}_{\text{context}} \in \mathbb{R}^{512}$
-2. The **target encoder** $\bar{f}_\theta$ (EMA copy) processes the solution $\to \mathbf{z}_{\text{target}} \in \mathbb{R}^{512}$
-3. $\mathbf{z}_{\text{target}}$ is projected to latent space via **z_encoder** and noise is added $\to \mathbf{z} \in \mathbb{R}^{256}$
-4. The **predictor** $g_\phi$ maps $(\mathbf{z}_{\text{context}}, \mathbf{z}) \to \mathbf{z}_{\text{pred}} \in \mathbb{R}^{512}$
-5. The **decoder** $D_\psi$ maps $(\mathbf{z}_{\text{context}}, \mathbf{z}) \to$ cell logits $\in \mathbb{R}^{9 \times 9 \times 9}$
-6. Loss combines energy ($\mathbf{z}_{\text{pred}}$ vs $\mathbf{z}_{\text{target}}$), VICReg, cross-entropy on decode, and constraint penalty
+1. The **context encoder** $f\_\theta$ processes the puzzle $\to \mathbf{z}\_{\text{context}} \in \mathbb{R}^{512}$
+2. The **target encoder** $\bar{f}\_\theta$ (EMA copy) processes the solution $\to \mathbf{z}\_{\text{target}} \in \mathbb{R}^{512}$
+3. $\mathbf{z}\_{\text{target}}$ is projected to latent space via **z_encoder** and noise is added $\to \mathbf{z} \in \mathbb{R}^{256}$
+4. The **predictor** $g\_\phi$ maps $(\mathbf{z}\_{\text{context}}, \mathbf{z}) \to \mathbf{z}\_{\text{pred}} \in \mathbb{R}^{512}$
+5. The **decoder** $D\_\psi$ maps $(\mathbf{z}\_{\text{context}}, \mathbf{z}) \to$ cell logits $\in \mathbb{R}^{9 \times 9 \times 9}$
+6. Loss combines energy ($\mathbf{z}\_{\text{pred}}$ vs $\mathbf{z}\_{\text{target}}$), VICReg, cross-entropy on decode, and constraint penalty
 
 **During inference**, the model sees only the puzzle:
-1. The context encoder processes the puzzle $\to \mathbf{z}_{\text{context}}$
+1. The context encoder processes the puzzle $\to \mathbf{z}\_{\text{context}}$
 2. Multiple $\mathbf{z}$ vectors are initialized randomly from $\mathcal{N}(\mathbf{0}, \mathbf{I})$
 3. For $T$ steps, $\mathbf{z}$ is optimized via Langevin dynamics to minimize self-consistency energy + constraint penalty
 4. The lowest-energy $\mathbf{z}$ is decoded to a $9 \times 9$ solution grid
@@ -277,7 +277,7 @@ The `_init_target_encoder` method copies matching weights from the context encod
 
 **File:** `src/ebm/model/jepa.py` (line 81)
 
-The target encoder produces a $d_{\text{model}}$-dimensional (512) representation of the solution. The `z_encoder` is a single linear layer that projects this down to $d_{\text{latent}}$ dimensions (256):
+The target encoder produces a $d\_{\text{model}}$-dimensional (512) representation of the solution. The `z_encoder` is a single linear layer that projects this down to $d\_{\text{latent}}$ dimensions (256):
 
 ```python
 self.z_encoder = nn.Linear(arch_cfg.d_model, arch_cfg.d_latent)
@@ -292,7 +292,7 @@ The z_encoder output is **L2-normalized** before noise is added:
 z_target_latent = F.normalize(self.z_encoder(z_target), dim=-1)
 ```
 
-This maps the output to the unit hypersphere $\|\hat{\mathbf{z}}\|_2 = 1$. This normalization is critical — see the next section for why.
+This maps the output to the unit hypersphere $\|\hat{\mathbf{z}}\|\_2 = 1$. This normalization is critical — see the next section for why.
 
 ### The Noise Injection Problem (and Solution)
 
@@ -300,13 +300,13 @@ During training, $\mathbf{z}$ is constructed as:
 
 $$\mathbf{z} = \hat{\mathbf{z}}_{\text{target}} + \sigma \cdot \boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$$
 
-where $\hat{\mathbf{z}}_{\text{target}}$ is the normalized z_encoder output and $\sigma$ is the noise scale.
+where $\hat{\mathbf{z}}\_{\text{target}}$ is the normalized z_encoder output and $\sigma$ is the noise scale.
 
 The noise injection simulates the inference scenario: at test time, $\mathbf{z}$ is initialized randomly and iteratively refined. During training, the model sees a **noisy version** of the true $\mathbf{z}$, so it must learn to work with imprecise latent variables.
 
-**The problem discovered in Runs 2-3:** Without normalization, the z_encoder output had $\|\mathbf{z}_{\text{enc}}\|_2 \approx 144$, while the noise (from `randn` in $\mathbb{R}^{128}$) had $\|\boldsymbol{\epsilon}\|_2 \approx 11$. The signal-to-noise ratio was $\sim$13:1 — $\mathbf{z}$ was essentially a deterministic copy of the solution encoding, not a noisy variable. The decoder learned to treat $\mathbf{z}$ as a lookup table, making Langevin dynamics useless: optimizing a random $\mathbf{z}$ couldn't recover the high-magnitude $\mathbf{z}$ the decoder expected.
+**The problem discovered in Runs 2-3:** Without normalization, the z_encoder output had $\|\mathbf{z}\_{\text{enc}}\|\_2 \approx 144$, while the noise (from `randn` in $\mathbb{R}^{128}$) had $\|\boldsymbol{\epsilon}\|\_2 \approx 11$. The signal-to-noise ratio was $\sim$13:1 — $\mathbf{z}$ was essentially a deterministic copy of the solution encoding, not a noisy variable. The decoder learned to treat $\mathbf{z}$ as a lookup table, making Langevin dynamics useless: optimizing a random $\mathbf{z}$ couldn't recover the high-magnitude $\mathbf{z}$ the decoder expected.
 
-**The fix in Run 4:** L2-normalize the z_encoder output to unit norm ($\|\hat{\mathbf{z}}\|_2 = 1$), and reduce $\sigma$ from 1.0 to 0.1. For a random vector $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ in $\mathbb{R}^{256}$, the expected norm is $\mathbb{E}[\|\boldsymbol{\epsilon}\|_2] = \sqrt{d} \approx 16$, so the noise term has expected norm $\sigma \cdot \sqrt{d} = 0.1 \times 16 = 1.6$. This gives an SNR of:
+**The fix in Run 4:** L2-normalize the z_encoder output to unit norm ($\|\hat{\mathbf{z}}\|\_2 = 1$), and reduce $\sigma$ from 1.0 to 0.1. For a random vector $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ in $\mathbb{R}^{256}$, the expected norm is $\mathbb{E}[\|\boldsymbol{\epsilon}\|\_2] = \sqrt{d} \approx 16$, so the noise term has expected norm $\sigma \cdot \sqrt{d} = 0.1 \times 16 = 1.6$. This gives an SNR of:
 
 $$\text{SNR} = \frac{\|\hat{\mathbf{z}}\|_2}{\sigma \cdot \sqrt{d_{\text{latent}}}} = \frac{1.0}{1.6} \approx 0.6$$
 
@@ -389,9 +389,9 @@ $$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{energy}} + \mathcal{L}_{\text{
 
 $$\mathcal{L}_{\text{energy}} = \frac{1}{B} \sum_{i=1}^{B} \|\mathbf{z}_{\text{pred}}^{(i)} - \mathbf{z}_{\text{target}}^{(i)}\|_2^2$$
 
-This is the core JEPA objective: minimize the squared $L^2$ distance between the predicted representation $\mathbf{z}_{\text{pred}}$ and the target representation $\mathbf{z}_{\text{target}}$. Lower energy means the predictor successfully anticipated the target encoder's output given the puzzle encoding and the latent variable.
+This is the core JEPA objective: minimize the squared $L^2$ distance between the predicted representation $\mathbf{z}\_{\text{pred}}$ and the target representation $\mathbf{z}\_{\text{target}}$. Lower energy means the predictor successfully anticipated the target encoder's output given the puzzle encoding and the latent variable.
 
-The energy function is deliberately simple — just $\|\mathbf{z}_{\text{pred}} - \mathbf{z}_{\text{target}}\|_2^2$. Complex energy functions (e.g., with learned temperature parameters or cosine similarity) are harder to optimize and can introduce training instabilities. The simplicity here is a feature: it provides clean, well-scaled gradients and makes the energy landscape directly interpretable as Euclidean distance in representation space.
+The energy function is deliberately simple — just $\|\mathbf{z}\_{\text{pred}} - \mathbf{z}\_{\text{target}}\|\_2^2$. Complex energy functions (e.g., with learned temperature parameters or cosine similarity) are harder to optimize and can introduce training instabilities. The simplicity here is a feature: it provides clean, well-scaled gradients and makes the energy landscape directly interpretable as Euclidean distance in representation space.
 
 ### VICReg: Preventing Representation Collapse
 
@@ -419,7 +419,7 @@ The variance loss penalizes any dimension whose standard deviation falls below 1
 
 $$\mathcal{L}_{\text{variance}} = \frac{1}{D} \sum_{j=1}^{D} \max(0, \; 1 - \sigma_j)$$
 
-This is a hinge loss — it doesn't push variance above 1 (that would fight against the energy loss), but it prevents any dimension from collapsing to a constant. If all $D$ dimensions have $\sigma_j \geq 1$, the variance loss is exactly zero.
+This is a hinge loss — it doesn't push variance above 1 (that would fight against the energy loss), but it prevents any dimension from collapsing to a constant. If all $D$ dimensions have $\sigma\_j \geq 1$, the variance loss is exactly zero.
 
 **Why $\gamma = 1$ as the target?** Setting the target standard deviation to 1 keeps representations on a natural scale. A much larger target would inflate representations and destabilize training; a smaller target would provide insufficient anti-collapse pressure.
 
@@ -431,13 +431,13 @@ $$\mathbf{C} = \frac{1}{B-1} (\mathbf{Z} - \bar{\mathbf{Z}})^\top (\mathbf{Z} - 
 
 $$\mathcal{L}_{\text{covariance}} = \frac{1}{D} \sum_{i \neq j} C_{ij}^2$$
 
-This penalizes the squared off-diagonal entries of the covariance matrix $\mathbf{C}$, pushing them toward zero. When the covariance loss is minimized, each dimension of $\mathbf{z}_{\text{context}}$ carries **independent** information — no redundancy, maximum information capacity for a given dimensionality.
+This penalizes the squared off-diagonal entries of the covariance matrix $\mathbf{C}$, pushing them toward zero. When the covariance loss is minimized, each dimension of $\mathbf{z}\_{\text{context}}$ carries **independent** information — no redundancy, maximum information capacity for a given dimensionality.
 
 Together, the variance and covariance terms ensure the representation uses the full $D$-dimensional space with each dimension carrying unique, spread-out information — exactly the opposite of collapse.
 
-#### Why Apply VICReg to $\mathbf{z}_{\text{context}}$?
+#### Why Apply VICReg to $\mathbf{z}\_{\text{context}}$?
 
-**Critical implementation detail:** VICReg is applied to $\mathbf{z}_{\text{context}}$ (the context encoder's output), **not** $\mathbf{z}_{\text{pred}}$. Run 1 discovered that applying VICReg to $\mathbf{z}_{\text{pred}}$ allowed the target encoder to collapse freely — the predictor's output had high variance (VICReg forced this), but the target $\mathbf{z}_{\text{target}}$ it was predicting had collapsed to a constant. The predictor simply learned to produce varied outputs that all mapped to the same degenerate target. Applying VICReg to $\mathbf{z}_{\text{context}}$ ensures the context encoder maintains rich, spread-out representations, which transitively prevents the target encoder (its EMA copy) from collapsing.
+**Critical implementation detail:** VICReg is applied to $\mathbf{z}\_{\text{context}}$ (the context encoder's output), **not** $\mathbf{z}\_{\text{pred}}$. Run 1 discovered that applying VICReg to $\mathbf{z}\_{\text{pred}}$ allowed the target encoder to collapse freely — the predictor's output had high variance (VICReg forced this), but the target $\mathbf{z}\_{\text{target}}$ it was predicting had collapsed to a constant. The predictor simply learned to produce varied outputs that all mapped to the same degenerate target. Applying VICReg to $\mathbf{z}\_{\text{context}}$ ensures the context encoder maintains rich, spread-out representations, which transitively prevents the target encoder (its EMA copy) from collapsing.
 
 #### VICReg Weight Choices
 
@@ -447,14 +447,14 @@ In the implementation:
 vreg = vicreg_loss(out.z_context, var_weight=1.0, cov_weight=0.01)
 ```
 
-- $\lambda_{\text{var}} = 1.0$: Equal weight with the energy loss. The variance term is the primary anti-collapse mechanism and needs to be strong enough to counteract the energy loss's pull toward degenerate solutions.
-- $\lambda_{\text{cov}} = 0.01$: Much smaller because the covariance loss has a different magnitude scale. For $D = 512$ dimensions, there are $D(D-1)/2 \approx 131{,}000$ off-diagonal entries summed. A weight of 0.01 keeps this term from dominating while still providing meaningful decorrelation pressure. Empirically, higher values (e.g., 1.0) caused training instability, while lower values (e.g., 0.001) left noticeable dimension correlation in the learned representations.
+- $\lambda\_{\text{var}} = 1.0$: Equal weight with the energy loss. The variance term is the primary anti-collapse mechanism and needs to be strong enough to counteract the energy loss's pull toward degenerate solutions.
+- $\lambda\_{\text{cov}} = 0.01$: Much smaller because the covariance loss has a different magnitude scale. For $D = 512$ dimensions, there are $D(D-1)/2 \approx 131{,}000$ off-diagonal entries summed. A weight of 0.01 keeps this term from dominating while still providing meaningful decorrelation pressure. Empirically, higher values (e.g., 1.0) caused training instability, while lower values (e.g., 0.001) left noticeable dimension correlation in the learned representations.
 
 ### Decode Loss
 
 $$\mathcal{L}_{\text{decode}} = -\frac{1}{|\mathcal{E}|} \sum_{(r,c) \in \mathcal{E}} \log p_{\text{model}}(y_{r,c} \mid \mathbf{z}_{\text{context}}, \mathbf{z})$$
 
-where $\mathcal{E} = \{(r, c) : \text{mask}_{r,c} = 0\}$ is the set of empty cells.
+where $\mathcal{E} = \{(r, c) : \text{mask}\_{r,c} = 0\}$ is the set of empty cells.
 
 Standard cross-entropy loss on the decoder's digit predictions, computed **only on empty cells**. This is an auxiliary loss that provides direct supervision: the decoder should predict the correct digit for each unknown cell.
 
@@ -464,9 +464,9 @@ Computing loss only on empty cells is essential — including given clue cells w
 
 **File:** `src/ebm/model/constraints.py`
 
-Let $\mathbf{p} \in \mathbb{R}^{9 \times 9 \times 9}$ be the softmax probabilities from the decoder, where $p_{r,c,d}$ is the predicted probability that cell $(r, c)$ contains digit $d$. Let $\mathcal{G} = \{G_1, \ldots, G_{27}\}$ be the 27 constraint groups (9 rows + 9 columns + 9 boxes), each containing 9 cell positions.
+Let $\mathbf{p} \in \mathbb{R}^{9 \times 9 \times 9}$ be the softmax probabilities from the decoder, where $p\_{r,c,d}$ is the predicted probability that cell $(r, c)$ contains digit $d$. Let $\mathcal{G} = \{G\_1, \ldots, G\_{27}\}$ be the 27 constraint groups (9 rows + 9 columns + 9 boxes), each containing 9 cell positions.
 
-For a valid Sudoku solution, each digit $d \in \{1, \ldots, 9\}$ appears exactly once in each group $G_k$, meaning:
+For a valid Sudoku solution, each digit $d \in \{1, \ldots, 9\}$ appears exactly once in each group $G\_k$, meaning:
 
 $$\sum_{(r,c) \in G_k} p_{r,c,d} = 1.0 \quad \forall \; k \in \{1, \ldots, 27\}, \; d \in \{1, \ldots, 9\}$$
 
@@ -484,7 +484,7 @@ The `GROUP_INDICES` tensor $(27 \times 9)$ is precomputed at module load time, m
 
 $$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{energy}} + \mathcal{L}_{\text{VICReg}} + w_{\text{decode}} \cdot \mathcal{L}_{\text{decode}} + w_{\text{constraint}} \cdot \mathcal{L}_{\text{constraint}}$$
 
-With $w_{\text{decode}} = 1.0$ and $w_{\text{constraint}} = 0.1$.
+With $w\_{\text{decode}} = 1.0$ and $w\_{\text{constraint}} = 0.1$.
 
 The energy and VICReg terms are unweighted (weight 1.0) because they are the core representational learning objectives and naturally counterbalance each other — energy pulls representations together while VICReg pushes them apart. The decode loss also at 1.0 provides strong auxiliary supervision that directly improves cell accuracy. The constraint loss at 0.1 is deliberately conservative — too much constraint weight fights the cross-entropy signal during early training, when predictions are poor and the soft constraint penalty disagrees with the hard digit labels. At 0.1, it provides gentle structural guidance without destabilizing optimization.
 
@@ -496,13 +496,13 @@ The energy and VICReg terms are unweighted (weight 1.0) because they are the cor
 
 **File:** `src/ebm/model/jepa.py` (lines 147-212)
 
-At inference time, we don't have the solution — we can't compute $\mathbf{z}_{\text{target}}$. The entire inference strategy is: **find a latent variable $\mathbf{z}$ that the model believes is consistent with the puzzle.**
+At inference time, we don't have the solution — we can't compute $\mathbf{z}\_{\text{target}}$. The entire inference strategy is: **find a latent variable $\mathbf{z}$ that the model believes is consistent with the puzzle.**
 
 Langevin dynamics is a gradient-based MCMC method that samples from an energy landscape by iteratively following the energy gradient with added noise:
 
 $$\mathbf{z}_{t+1} = \mathbf{z}_t - \eta \, \nabla_{\mathbf{z}} E(\mathbf{z}_t) + \sigma \, \boldsymbol{\epsilon}_t, \quad \boldsymbol{\epsilon}_t \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$$
 
-In physics terms: a particle ($\mathbf{z}$) rolls downhill on the energy surface (gradient term $-\eta \, \nabla_{\mathbf{z}} E$) while being jostled by random thermal fluctuations (noise term $\sigma \, \boldsymbol{\epsilon}$). The gradient term drives the particle toward low-energy regions (valid solutions); the noise term prevents it from getting stuck in local minima.
+In physics terms: a particle ($\mathbf{z}$) rolls downhill on the energy surface (gradient term $-\eta \, \nabla\_{\mathbf{z}} E$) while being jostled by random thermal fluctuations (noise term $\sigma \, \boldsymbol{\epsilon}$). The gradient term drives the particle toward low-energy regions (valid solutions); the noise term prevents it from getting stuck in local minima.
 
 The implementation:
 
@@ -533,9 +533,9 @@ for step in range(n_steps):
 
 ### Self-Consistency Energy
 
-The inference energy is **not** the same as the training energy. During training, the energy is $\|\mathbf{z}_{\text{pred}} - \mathbf{z}_{\text{target}}\|^2$ where $\mathbf{z}_{\text{target}}$ comes from encoding the **true solution**. At inference, we don't have the solution.
+The inference energy is **not** the same as the training energy. During training, the energy is $\|\mathbf{z}\_{\text{pred}} - \mathbf{z}\_{\text{target}}\|^2$ where $\mathbf{z}\_{\text{target}}$ comes from encoding the **true solution**. At inference, we don't have the solution.
 
-**Runs 2-3** used $\|\mathbf{z}_{\text{pred}}\|^2$ as a proxy (assuming $\mathbf{z}_{\text{target}} \approx \mathbf{0}$), which is wrong — $\mathbf{z}_{\text{target}}$ is not zero. This produced misleading gradients that actively hurt accuracy.
+**Runs 2-3** used $\|\mathbf{z}\_{\text{pred}}\|^2$ as a proxy (assuming $\mathbf{z}\_{\text{target}} \approx \mathbf{0}$), which is wrong — $\mathbf{z}\_{\text{target}}$ is not zero. This produced misleading gradients that actively hurt accuracy.
 
 **Run 4** introduced **self-consistency energy**: decode the current $\mathbf{z}$ to a candidate solution (soft probabilities $\hat{\mathbf{p}}$), re-encode that candidate through the target encoder, and measure how well the predictor's output matches:
 
@@ -569,7 +569,7 @@ Multiple chains hedge against local minima: even if some chains get stuck in bad
 
 ### Temperature Annealing
 
-The noise scale and constraint weight both change over the course of the Langevin trajectory via a linear temperature schedule $\tau_t$:
+The noise scale and constraint weight both change over the course of the Langevin trajectory via a linear temperature schedule $\tau\_t$:
 
 $$\tau_t = 1 - \frac{t}{T}$$
 
@@ -627,7 +627,7 @@ The system detects available GPU VRAM and automatically scales the batch size an
 
 $$\eta_{\text{scaled}} = \eta_{\text{base}} \cdot \sqrt{\frac{B_{\text{actual}}}{B_{\text{base}}}}, \quad \eta_{\text{base}} = 3 \times 10^{-4}, \; B_{\text{base}} = 512$$
 
-For example, $B_{\text{actual}} = 2048 \implies \eta_{\text{scaled}} = 3 \times 10^{-4} \cdot \sqrt{4} = 6 \times 10^{-4}$.
+For example, $B\_{\text{actual}} = 2048 \implies \eta\_{\text{scaled}} = 3 \times 10^{-4} \cdot \sqrt{4} = 6 \times 10^{-4}$.
 
 The sqrt rule is more conservative than linear scaling ($\eta \propto B$) and works well with adaptive optimizers like AdamW. The intuition: with $k$ times more samples per gradient step, the gradient estimate's variance decreases by $1/k$, so its magnitude (standard deviation) decreases by $1/\sqrt{k}$, justifying a $\sqrt{k}$ increase in step size.
 
@@ -892,29 +892,29 @@ SudokuJEPA.solve(puzzle, mask):
 
 ### Architecture (Run 5)
 
-**$d_{\text{model}} = 512$** — The Transformer hidden dimension. Run 4 used $d_{\text{model}} = 256$ (7.4M params) and plateaued at 82.5% puzzle accuracy; doubling to 512 (36.5M params) reached 95.6%. The capacity increase was justified by the observation that the model's forward-pass accuracy was still improving at epoch 20 in Run 4 — it was underfitting, not overfitting. 512 is a standard Transformer width (matching BERT-base, ViT-Small) that balances capacity with training speed. 1024 was not tested due to memory constraints, but the accuracy curve's near-plateau at epoch 17-20 of Run 5 suggests diminishing returns.
+**$d\_{\text{model}} = 512$** — The Transformer hidden dimension. Run 4 used $d\_{\text{model}} = 256$ (7.4M params) and plateaued at 82.5% puzzle accuracy; doubling to 512 (36.5M params) reached 95.6%. The capacity increase was justified by the observation that the model's forward-pass accuracy was still improving at epoch 20 in Run 4 — it was underfitting, not overfitting. 512 is a standard Transformer width (matching BERT-base, ViT-Small) that balances capacity with training speed. 1024 was not tested due to memory constraints, but the accuracy curve's near-plateau at epoch 17-20 of Run 5 suggests diminishing returns.
 
-**$n_{\text{layers}} = 8$** — Encoder Transformer depth. Sudoku requires multi-hop reasoning (placing digit X in row 1 constrains row 1, which constrains column 3, which constrains box 2). Each Transformer layer can propagate information one "hop" via attention. 8 layers provide sufficient depth for the longest constraint chains in a 9x9 grid. Run 4 used 6 layers; the increase to 8 was part of the general capacity scaling. Deeper models (12+) risk gradient degradation with the pre-norm architecture and the relatively short 81-token sequence.
+**$n\_{\text{layers}} = 8$** — Encoder Transformer depth. Sudoku requires multi-hop reasoning (placing digit X in row 1 constrains row 1, which constrains column 3, which constrains box 2). Each Transformer layer can propagate information one "hop" via attention. 8 layers provide sufficient depth for the longest constraint chains in a 9x9 grid. Run 4 used 6 layers; the increase to 8 was part of the general capacity scaling. Deeper models (12+) risk gradient degradation with the pre-norm architecture and the relatively short 81-token sequence.
 
-**$n_{\text{heads}} = 8$** — Attention heads, giving head dimension $d_{\text{model}} / n_{\text{heads}} = 64$. This is the standard head dimension used in most Transformer architectures (GPT-2, BERT, ViT). Each head can specialize in different constraint patterns (row relationships, column relationships, box relationships, etc.). Fewer heads (4) would reduce this specialization capacity; more (16) would halve the head dimension to 32, reducing per-head expressiveness.
+**$n\_{\text{heads}} = 8$** — Attention heads, giving head dimension $d\_{\text{model}} / n\_{\text{heads}} = 64$. This is the standard head dimension used in most Transformer architectures (GPT-2, BERT, ViT). Each head can specialize in different constraint patterns (row relationships, column relationships, box relationships, etc.). Fewer heads (4) would reduce this specialization capacity; more (16) would halve the head dimension to 32, reducing per-head expressiveness.
 
-**$d_{\text{ffn}} = 2048$** — Feed-forward network inner dimension, following the standard $4 \times d_{\text{model}}$ ratio from the original Transformer (Vaswani et al., 2017). This expansion ratio provides a nonlinear capacity bottleneck that has been empirically validated across hundreds of Transformer applications.
+**$d\_{\text{ffn}} = 2048$** — Feed-forward network inner dimension, following the standard $4 \times d\_{\text{model}}$ ratio from the original Transformer (Vaswani et al., 2017). This expansion ratio provides a nonlinear capacity bottleneck that has been empirically validated across hundreds of Transformer applications.
 
 **$\text{dropout} = 0.1$** — Standard Transformer dropout. With 8M training samples and 36.5M parameters, the model is in a data-rich regime (data/param ratio $\approx 220$), so heavy regularization is unnecessary. 0.1 provides mild regularization against co-adaptation without significantly hurting training signal.
 
-**$d_{\text{latent}} = 256$** — Latent variable $\mathbf{z}$ dimension, set to $d_{\text{model}} / 2$. This is the information bottleneck between the target encoder and the predictor/decoder. Too small ($< 64$) would lose critical solution information; too large ($= d_{\text{model}}$) would eliminate the bottleneck, making $\mathbf{z}$ a near-lossless copy. $d_{\text{model}} / 2$ halves the information while keeping the Langevin search space tractable — a random search in $\mathbb{R}^{256}$ is substantially easier than $\mathbb{R}^{512}$.
+**$d\_{\text{latent}} = 256$** — Latent variable $\mathbf{z}$ dimension, set to $d\_{\text{model}} / 2$. This is the information bottleneck between the target encoder and the predictor/decoder. Too small ($< 64$) would lose critical solution information; too large ($= d\_{\text{model}}$) would eliminate the bottleneck, making $\mathbf{z}$ a near-lossless copy. $d\_{\text{model}} / 2$ halves the information while keeping the Langevin search space tractable — a random search in $\mathbb{R}^{256}$ is substantially easier than $\mathbb{R}^{512}$.
 
-**`predictor_hidden` $= 1024$** — Predictor MLP hidden dimension, set to $2 \times d_{\text{model}}$. The predictor must be capacity-limited (to force reliance on $\mathbf{z}$), but not so small that it can't learn the prediction mapping. A single hidden layer of $2 \times d_{\text{model}}$ provides a $768 \to 1024 \to 512$ bottleneck that can approximate the mapping while remaining too shallow to ignore $\mathbf{z}$. The 3-layer depth (input → hidden → output) was chosen as the minimum that supports a residual connection.
+**`predictor_hidden` $= 1024$** — Predictor MLP hidden dimension, set to $2 \times d\_{\text{model}}$. The predictor must be capacity-limited (to force reliance on $\mathbf{z}$), but not so small that it can't learn the prediction mapping. A single hidden layer of $2 \times d\_{\text{model}}$ provides a $768 \to 1024 \to 512$ bottleneck that can approximate the mapping while remaining too shallow to ignore $\mathbf{z}$. The 3-layer depth (input → hidden → output) was chosen as the minimum that supports a residual connection.
 
 **`decoder_layers` $= 4$** — Decoder depth, half the encoder. The decoder's job is simpler: unpack a compressed representation into per-cell predictions, guided by inter-cell attention for consistency. It doesn't need to build a holistic understanding from scratch. 4 layers provide enough refinement while keeping inference (Langevin dynamics, which calls the decoder every step) computationally tractable.
 
-**`decoder_d_cell` $= 128$** — Per-cell feature dimension in the decoder, $d_{\text{model}} / 4$. Each cell needs to represent a distribution over 9 digits — 128 dimensions is generous for this. The decoder processes 81 tokens of dimension 128, so Transformer attention cost is $O(81^2 \times 128)$, kept modest for the per-step Langevin calls.
+**`decoder_d_cell` $= 128$** — Per-cell feature dimension in the decoder, $d\_{\text{model}} / 4$. Each cell needs to represent a distribution over 9 digits — 128 dimensions is generous for this. The decoder processes 81 tokens of dimension 128, so Transformer attention cost is $O(81^2 \times 128)$, kept modest for the per-step Langevin calls.
 
 ### Training
 
 **$B = 2048$** — Batch size, auto-scaled from GPU VRAM. With the RTX 5090 (32GB), 2048 was the maximum stable batch size for the 7.4M model (Run 4). The H200 (144GB) could fit larger batches but 2048 was kept for comparability. Larger batches provide better gradient estimates (lower variance) and improve GPU utilization. The jump from $B = 512$ (Run 2) to $B = 2048$ (Run 3) contributed +9.1% puzzle accuracy, demonstrating the value of gradient quality.
 
-**$\eta = 6 \times 10^{-4}$** — Peak learning rate, auto-scaled from the base pair $(\eta_{\text{base}} = 3 \times 10^{-4}, B_{\text{base}} = 512)$ via the sqrt rule. $3 \times 10^{-4}$ is the standard AdamW learning rate (established by BERT, widely adopted). The sqrt scaling to $6 \times 10^{-4}$ for $B = 2048$ is conservative — linear scaling would give $1.2 \times 10^{-3}$, which risks instability with adaptive optimizers.
+**$\eta = 6 \times 10^{-4}$** — Peak learning rate, auto-scaled from the base pair $(\eta\_{\text{base}} = 3 \times 10^{-4}, B\_{\text{base}} = 512)$ via the sqrt rule. $3 \times 10^{-4}$ is the standard AdamW learning rate (established by BERT, widely adopted). The sqrt scaling to $6 \times 10^{-4}$ for $B = 2048$ is conservative — linear scaling would give $1.2 \times 10^{-3}$, which risks instability with adaptive optimizers.
 
 **`weight_decay` $= 0.01$** — AdamW L2 regularization. The standard default from the AdamW paper (Loshchilov & Hutter, 2019). With a large dataset (8M samples), the model isn't prone to overfitting, so weight decay serves primarily as a stability mechanism rather than a regularizer.
 
@@ -924,15 +924,15 @@ SudokuJEPA.solve(puzzle, mask):
 
 **`grad_clip_norm` $= 1.0$** — Gradient clipping. Standard safety measure for Transformer training that prevents occasional large gradients (from unlucky batches or numerical instabilities) from causing catastrophic parameter updates. 1.0 is the most common choice (used by GPT-2, T5, etc.).
 
-**$m \in [0.996, 1.0]$** — EMA momentum schedule. $m_0 = 0.996$ corresponds to an effective averaging window of $1/(1-m) = 250$ steps. This is fast enough to track early learning while providing smoothing. The linear increase to $1.0$ gradually freezes the target encoder, following the BYOL (Grill et al., 2020) and I-JEPA convention. Alternative schedules (cosine) showed no significant difference in preliminary experiments.
+**$m \in [0.996, 1.0]$** — EMA momentum schedule. $m\_0 = 0.996$ corresponds to an effective averaging window of $1/(1-m) = 250$ steps. This is fast enough to track early learning while providing smoothing. The linear increase to $1.0$ gradually freezes the target encoder, following the BYOL (Grill et al., 2020) and I-JEPA convention. Alternative schedules (cosine) showed no significant difference in preliminary experiments.
 
-**$\sigma_z = 0.1$** — Training noise scale on $\mathbf{z}$. Calibrated in Run 4 to give SNR $\approx 0.6$ after L2 normalization. This is in the "genuinely noisy" regime: the model can extract useful signal from $\mathbf{z}$ but cannot treat it as deterministic. Values much lower ($0.01$) make $\mathbf{z}$ too clean (reverting to the lookup-table problem from Runs 2-3); values much higher ($1.0$) overwhelm the signal and the model ignores $\mathbf{z}$ entirely.
+**$\sigma\_z = 0.1$** — Training noise scale on $\mathbf{z}$. Calibrated in Run 4 to give SNR $\approx 0.6$ after L2 normalization. This is in the "genuinely noisy" regime: the model can extract useful signal from $\mathbf{z}$ but cannot treat it as deterministic. Values much lower ($0.01$) make $\mathbf{z}$ too clean (reverting to the lookup-table problem from Runs 2-3); values much higher ($1.0$) overwhelm the signal and the model ignores $\mathbf{z}$ entirely.
 
-**$w_{\text{decode}} = 1.0$** — Decode loss weight. Equal weight with energy and VICReg ensures the decoder receives strong supervision. The decode loss provides the most direct learning signal (correct digit predictions), so underweighting it would slow convergence significantly.
+**$w\_{\text{decode}} = 1.0$** — Decode loss weight. Equal weight with energy and VICReg ensures the decoder receives strong supervision. The decode loss provides the most direct learning signal (correct digit predictions), so underweighting it would slow convergence significantly.
 
-**$w_{\text{constraint}} = 0.1$** — Constraint loss weight. Deliberately conservative: the constraint penalty and cross-entropy loss can conflict during early training (soft probability sums may deviate from 1.0 even for correct argmax predictions). At $0.1$, the constraint signal provides gentle structural guidance without destabilizing the dominant cross-entropy signal. Higher values ($0.5$, $1.0$) were tested and caused slower initial convergence due to the conflicting gradients.
+**$w\_{\text{constraint}} = 0.1$** — Constraint loss weight. Deliberately conservative: the constraint penalty and cross-entropy loss can conflict during early training (soft probability sums may deviate from 1.0 even for correct argmax predictions). At $0.1$, the constraint signal provides gentle structural guidance without destabilizing the dominant cross-entropy signal. Higher values ($0.5$, $1.0$) were tested and caused slower initial convergence due to the conflicting gradients.
 
-**$\lambda_{\text{var}} = 1.0$, $\lambda_{\text{cov}} = 0.01$** — VICReg weights. The variance term is the primary anti-collapse mechanism and needs full weight. The covariance term operates on a different scale ($D(D-1)/2 \approx 131K$ off-diagonal entries for $D = 512$) and must be downweighted to avoid dominating. $0.01$ was chosen empirically; $1.0$ caused training instability, $0.001$ left noticeable dimension correlation.
+**$\lambda\_{\text{var}} = 1.0$, $\lambda\_{\text{cov}} = 0.01$** — VICReg weights. The variance term is the primary anti-collapse mechanism and needs full weight. The covariance term operates on a different scale ($D(D-1)/2 \approx 131K$ off-diagonal entries for $D = 512$) and must be downweighted to avoid dominating. $0.01$ was chosen empirically; $1.0$ caused training instability, $0.001$ left noticeable dimension correlation.
 
 ### Inference (Langevin Dynamics)
 
@@ -940,6 +940,6 @@ SudokuJEPA.solve(puzzle, mask):
 
 **$K = 8$ chains** — Parallel Langevin trajectories per puzzle. Multiple chains hedge against local minima in the energy landscape. The improvement from 1 to 4 chains is significant; from 4 to 8 is modest; from 8 to 16 is marginal. 8 chains provide a good balance between accuracy and compute — all chains run in parallel on the GPU, so the wall-clock cost scales with the number of chains only through memory bandwidth, not latency.
 
-**$\eta_{\text{Langevin}} = 0.01$** — Langevin step size. An order of magnitude smaller than the training LR ($6 \times 10^{-4}$), appropriate because Langevin optimization must be conservative — overshooting in latent space can produce solutions that are worse than the starting point. The energy gradients in the learned landscape are sharper than training loss gradients, requiring smaller steps for stability.
+**$\eta\_{\text{Langevin}} = 0.01$** — Langevin step size. An order of magnitude smaller than the training LR ($6 \times 10^{-4}$), appropriate because Langevin optimization must be conservative — overshooting in latent space can produce solutions that are worse than the starting point. The energy gradients in the learned landscape are sharper than training loss gradients, requiring smaller steps for stability.
 
-**$\sigma_{\text{Langevin}} = 0.005$** — Base noise magnitude for Langevin dynamics. Half the step size, following the Langevin MCMC convention that noise should be smaller than the gradient step to ensure net progress toward low-energy regions. The noise is further annealed by the temperature schedule $\tau_t$, so effective noise is $0.005 \cdot \tau_t$, vanishing to zero by the final step.
+**$\sigma\_{\text{Langevin}} = 0.005$** — Base noise magnitude for Langevin dynamics. Half the step size, following the Langevin MCMC convention that noise should be smaller than the gradient step to ensure net progress toward low-energy regions. The noise is further annealed by the temperature schedule $\tau\_t$, so effective noise is $0.005 \cdot \tau\_t$, vanishing to zero by the final step.
