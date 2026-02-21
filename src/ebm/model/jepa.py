@@ -210,3 +210,97 @@ class SudokuJEPA(nn.Module):
         best_logits = final_logits[torch.arange(batch_size, device=device), best_chain]
 
         return best_logits.argmax(dim=-1) + 1
+
+    def solve_diagnostic(
+        self,
+        puzzle: Tensor,
+        mask: Tensor,
+        solution: Tensor,
+        inference_cfg: InferenceConfig | None = None,
+        n_chains_override: int | None = None,
+    ) -> tuple[Tensor, dict[str, Tensor]]:
+        """
+        Solve with full per-step per-chain diagnostics.
+
+        Runs the same Langevin dynamics as solve() but records energy components
+        and decoded cell accuracy at every step.
+
+        Args:
+            puzzle: (B, 10, 9, 9) one-hot encoded puzzle.
+            mask: (B, 9, 9) binary mask, 1 = given clue.
+            solution: (B, 9, 9, 9) one-hot ground truth for accuracy tracking.
+            inference_cfg: Langevin dynamics parameters. Defaults from train_cfg.
+            n_chains_override: Override the number of chains from inference_cfg.
+
+        Returns:
+            Tuple of (pred, diagnostics) where pred is (B, 9, 9) integer solution
+            and diagnostics contains per-step tensors keyed by metric name.
+
+        """
+        if not inference_cfg:
+            inference_cfg = InferenceConfig.from_training_config(self.train_cfg)
+
+        n_chains = n_chains_override if n_chains_override is not None else inference_cfg.n_chains
+        n_steps = inference_cfg.n_steps
+        batch_size = puzzle.shape[0]
+        device = puzzle.device
+
+        diag = {
+            key: torch.zeros(batch_size, n_chains, n_steps, device=device)
+            for key in ('energy', 'self_consistency', 'constraint_penalty', 'cell_accuracy')
+        }
+
+        target_digits = solution.argmax(dim=-1) + 1
+        empty = mask == 0
+        empty_count = empty.float().sum(dim=(1, 2)).clamp(min=1)
+
+        with torch.no_grad():
+            z_context = self.context_encoder(puzzle)
+
+        z_context_exp = z_context.repeat_interleave(n_chains, dim=0)
+        puzzle_exp = puzzle.repeat_interleave(n_chains, dim=0)
+        mask_exp = mask.repeat_interleave(n_chains, dim=0)
+        target_exp = target_digits.repeat_interleave(n_chains, dim=0)
+        empty_exp = empty.repeat_interleave(n_chains, dim=0)
+        empty_count_exp = empty_count.repeat_interleave(n_chains, dim=0)
+
+        z = torch.randn(batch_size * n_chains, self.arch_cfg.d_latent, device=device)
+        total_energy = torch.zeros(batch_size * n_chains, device=device)
+
+        with torch.enable_grad():
+            z = z.detach().requires_grad_(True)
+            for step in range(n_steps):
+                z_pred = self.predictor(z_context_exp, z)
+                logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)
+                probs = torch.softmax(logits, dim=-1)
+
+                z_target_est = self.target_encoder(probs.permute(0, 3, 1, 2))
+                sc = ((z_pred - z_target_est) ** 2).sum(dim=-1)
+                cp = constraint_penalty(probs)
+
+                temp = 1.0 - step / max(n_steps, 1)
+                total_energy = sc + cp * (1.0 + 2.0 * (1.0 - temp))
+
+                diag['energy'][:, :, step] = total_energy.detach().reshape(batch_size, n_chains)
+                diag['self_consistency'][:, :, step] = sc.detach().reshape(batch_size, n_chains)
+                diag['constraint_penalty'][:, :, step] = cp.detach().reshape(batch_size, n_chains)
+
+                with torch.no_grad():
+                    pred_digits = logits.detach().argmax(dim=-1) + 1
+                    correct_empty = (pred_digits == target_exp) & empty_exp
+                    acc = correct_empty.float().sum(dim=(1, 2)) / empty_count_exp
+                    diag['cell_accuracy'][:, :, step] = acc.reshape(batch_size, n_chains)
+
+                grad_z = torch.autograd.grad(total_energy.sum(), z)[0]
+                noise = inference_cfg.noise_scale * temp * torch.randn_like(z)
+                z = (z - inference_cfg.lr * grad_z + noise).detach().requires_grad_(True)
+
+        with torch.no_grad():
+            final_logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)
+
+        final_logits = final_logits.reshape(batch_size, n_chains, 9, 9, 9)
+        chain_energy = total_energy.detach().reshape(batch_size, n_chains)
+        best_chain = chain_energy.argmin(dim=1)
+        best_logits = final_logits[torch.arange(batch_size, device=device), best_chain]
+
+        return best_logits.argmax(dim=-1) + 1, {k: v.cpu() for k, v in diag.items()}
