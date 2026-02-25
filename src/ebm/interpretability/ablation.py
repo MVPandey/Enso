@@ -1,8 +1,6 @@
-"""Hook-based head ablation for causal validation experiments."""
+"""Weight-based head ablation for causal validation experiments."""
 
 from __future__ import annotations
-
-from collections.abc import Callable
 
 import torch
 from torch import Tensor, nn
@@ -13,42 +11,8 @@ from ebm.model.constraints import constraint_penalty
 from ebm.model.jepa import InferenceConfig, SudokuJEPA
 
 
-def _make_ablation_hook(head_indices: list[int], n_heads: int, d_head: int) -> Callable:
-    """
-    Create a forward hook that zeros out specified attention heads.
-
-    Hooks into the MHA output and zeros the dimensions corresponding to
-    the ablated heads in the concatenated head output.
-
-    Args:
-        head_indices: Which heads to ablate (zero out).
-        n_heads: Total number of heads in the MHA module.
-        d_head: Dimension per head (d_model // n_heads).
-
-    Returns:
-        Hook function.
-
-    """
-
-    def hook(_module: nn.Module, _input: tuple, output: tuple) -> tuple:
-        attn_output = output[0]  # (B, seq_len, d_model) or similar
-        attn_weights = output[1] if len(output) > 1 else None
-
-        modified = attn_output.clone()
-        for h in head_indices:
-            start = h * d_head
-            end = start + d_head
-            modified[..., start:end] = 0.0
-
-        if attn_weights is not None:
-            return modified, attn_weights
-        return (modified,)
-
-    return hook
-
-
 class HeadAblator:
-    """Hook-based ablation of specific attention heads during Langevin dynamics."""
+    """Weight-based ablation of specific attention heads during Langevin dynamics."""
 
     def __init__(self, model: SudokuJEPA) -> None:
         """Initialize with the model to ablate."""
@@ -81,6 +45,7 @@ class HeadAblator:
         baseline_board = self._run_langevin(puzzle, mask, inference_cfg, ablation_specs=[])
         baseline_acc, baseline_strat_acc = self._compute_accuracy(
             baseline_board,
+            puzzle,
             solution,
             mask,
         )
@@ -89,6 +54,7 @@ class HeadAblator:
         ablated_board = self._run_langevin(puzzle, mask, inference_cfg, ablation_specs=head_specs)
         ablated_acc, ablated_strat_acc = self._compute_accuracy(
             ablated_board,
+            puzzle,
             solution,
             mask,
         )
@@ -144,17 +110,14 @@ class HeadAblator:
         inference_cfg: InferenceConfig,
         ablation_specs: list[tuple[str, int]],
     ) -> Tensor:
-        """Run Langevin dynamics with optional ablation hooks."""
+        """Run Langevin dynamics with optional head ablation via weight zeroing."""
         model = self._model
         device = puzzle.device
         batch_size = puzzle.shape[0]
-        handles: list[nn.utils.hooks.RemovableHook] = []
+
+        saved_weights = self._apply_weight_ablation(ablation_specs) if ablation_specs else {}
 
         try:
-            # Register ablation hooks
-            if ablation_specs:
-                handles = self._register_ablation_hooks(ablation_specs)
-
             with torch.no_grad():
                 z_context = model.context_encoder(puzzle)
 
@@ -183,17 +146,29 @@ class HeadAblator:
             return final_logits.argmax(dim=-1) + 1  # (B, 9, 9)
 
         finally:
-            for handle in handles:
-                handle.remove()
+            self._restore_weights(saved_weights)
 
-    def _register_ablation_hooks(
+    def _apply_weight_ablation(
         self,
         head_specs: list[tuple[str, int]],
-    ) -> list[nn.utils.hooks.RemovableHook]:
-        """Register forward hooks on MHA modules for head ablation."""
-        handles: list[nn.utils.hooks.RemovableHook] = []
+    ) -> dict[str, Tensor]:
+        """
+        Zero out_proj weight columns for specified heads.
 
-        # Group specs by module path
+        PyTorch's MHA concatenates per-head outputs as [h0|h1|...|hN] and
+        projects through out_proj. Zeroing columns [h*d_head:(h+1)*d_head]
+        of out_proj.weight eliminates that head's contribution cleanly,
+        before the linear mixing.
+
+        Args:
+            head_specs: List of (module_path, head_index) to ablate.
+
+        Returns:
+            Dict mapping module_path to original weight tensors for restoration.
+
+        """
+        saved: dict[str, Tensor] = {}
+
         module_heads: dict[str, list[int]] = {}
         for module_path, head_idx in head_specs:
             module_heads.setdefault(module_path, []).append(head_idx)
@@ -203,12 +178,22 @@ class HeadAblator:
             if module is None or not isinstance(module, nn.MultiheadAttention):
                 continue
 
-            n_heads = module.num_heads
-            d_head = module.embed_dim // n_heads
-            hook = _make_ablation_hook(head_indices, n_heads, d_head)
-            handles.append(module.register_forward_hook(hook))
+            d_head = module.embed_dim // module.num_heads
+            saved[module_path] = module.out_proj.weight.data.clone()
+            with torch.no_grad():
+                for h in head_indices:
+                    start = h * d_head
+                    end = start + d_head
+                    module.out_proj.weight.data[:, start:end] = 0.0
 
-        return handles
+        return saved
+
+    def _restore_weights(self, saved: dict[str, Tensor]) -> None:
+        """Restore original out_proj weights after ablation."""
+        for module_path, weight_data in saved.items():
+            module = self._find_module(module_path)
+            if module is not None:
+                module.out_proj.weight.data = weight_data
 
     def _find_module(self, path: str) -> nn.Module | None:
         """Find a submodule by dot-separated path."""
@@ -241,12 +226,29 @@ class HeadAblator:
     def _compute_accuracy(
         self,
         board: Tensor,
+        puzzle: Tensor,
         solution: Tensor,
         mask: Tensor,
     ) -> tuple[float, dict[str, float]]:
-        """Compute overall and per-strategy accuracy."""
+        """
+        Compute overall and per-strategy accuracy.
+
+        Args:
+            board: (B, 9, 9) predicted digit grid.
+            puzzle: (B, 10, 9, 9) one-hot encoded puzzle (used for clue board).
+            solution: (B, 9, 9, 9) one-hot ground truth.
+            mask: (B, 9, 9) binary clue mask.
+
+        Returns:
+            Tuple of (overall_accuracy, per_strategy_accuracy).
+
+        """
         batch_size = board.shape[0]
         sol_board = solution.argmax(dim=-1) + 1  # (B, 9, 9)
+
+        # Build clue board from puzzle: channels 1-9 are digits
+        clue_board = puzzle[:, 1:].permute(0, 2, 3, 1).argmax(dim=-1) + 1  # (B, 9, 9)
+        clue_board = clue_board * mask.long()  # zero out non-clue cells
 
         total_correct = 0
         total_cells = 0
@@ -258,14 +260,13 @@ class HeadAblator:
 
         overall_acc = total_correct / max(total_cells, 1)
 
-        # Per-strategy accuracy: classify the solution fills and check
+        # Per-strategy accuracy: classify from clue board to solution
         strategy_correct: dict[str, int] = {}
         strategy_total: dict[str, int] = {}
 
         for b in range(batch_size):
-            # Use a nearly-complete board for strategy classification
             events = self._detector.classify(
-                torch.zeros_like(board[b]),
+                clue_board[b],
                 sol_board[b],
                 mask[b],
             )

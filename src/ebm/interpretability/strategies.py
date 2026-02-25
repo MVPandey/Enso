@@ -1,4 +1,19 @@
-"""Rule-based Sudoku strategy classifier for cell-fill events."""
+"""
+Rule-based Sudoku strategy classifier for cell-fill events.
+
+Note on Langevin trajectory classification:
+    During continuous Langevin dynamics all 81 cells always carry a digit
+    (the argmax of the current distribution). The ``classify`` method detects
+    cells whose digit *changed* between consecutive steps and builds a
+    reference board by treating those changed cells as empty. This means the
+    candidate analysis — and therefore the strategy label — depends on the
+    specific ordering in which cells change across the trajectory. The same
+    final board could receive different strategy labels depending on which
+    cells happened to flip first. Strategy classifications during
+    intermediate Langevin steps are therefore *approximate*; they reflect the
+    minimum elimination technique needed given the trajectory's particular
+    sequence of fills, not a canonical solver ordering.
+"""
 
 from __future__ import annotations
 

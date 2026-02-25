@@ -372,7 +372,14 @@ def run_causal_ablation(args: argparse.Namespace, model: SudokuJEPA, loader: Dat
 
 
 def run_forward_vs_langevin(args: argparse.Namespace, model: SudokuJEPA, loader: DataLoader) -> None:
-    """Experiment 5: Compare single forward pass vs full Langevin dynamics."""
+    """
+    Experiment 5: Compare single forward pass vs full Langevin dynamics.
+
+    The "forward pass" encodes the solution through the target encoder to get
+    the ideal latent z, then decodes with that z. This shows the upper bound
+    of what the decoder can produce with a perfect latent code, compared to
+    what Langevin dynamics can recover starting from random z.
+    """
     out_dir = args.output_dir / 'forward-vs-langevin'
     out_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device(args.device)
@@ -390,24 +397,34 @@ def run_forward_vs_langevin(args: argparse.Namespace, model: SudokuJEPA, loader:
         solution = batch['solution'].to(device)
         mask = batch['mask'].to(device)
 
+        # Forward pass: encode solution to ideal z, then decode
+        with torch.no_grad():
+            z_context = model.context_encoder(puzzle)
+            z_target = model.target_encoder(solution.permute(0, 3, 1, 2))
+            z_ideal = torch.nn.functional.normalize(model.z_encoder(z_target), dim=-1)
+            forward_logits = model.decoder(z_context, z_ideal, puzzle, mask)
+            forward_board = forward_logits.argmax(dim=-1) + 1  # (B, 9, 9)
+
+        # Langevin dynamics from random z
         traj = recorder.record(puzzle, mask, solution, inference_cfg)
+
+        # Build clue board for strategy classification
+        clue_board = puzzle[:, 1:].permute(0, 2, 3, 1).argmax(dim=-1) + 1  # (B, 9, 9)
+        clue_board = clue_board * mask.long()
 
         for b in range(puzzle.shape[0]):
             sol_board = solution[b].argmax(dim=-1) + 1
 
-            # Forward pass: step 0 board
-            board_0 = traj.steps[0].board[b]
-            events_0 = detector.classify(torch.zeros_like(board_0), board_0, mask[b])
-            forward_correct = int(((board_0 == sol_board) & (mask[b] == 0)).sum().item())
+            events_fwd = detector.classify(clue_board[b], forward_board[b], mask[b])
+            forward_correct = int(((forward_board[b] == sol_board) & (mask[b] == 0)).sum().item())
 
-            # Langevin: final board
             board_final = traj.final_board[b]
-            events_final = detector.classify(torch.zeros_like(board_final), board_final, mask[b])
+            events_final = detector.classify(clue_board[b], board_final, mask[b])
             langevin_correct = int(((board_final == sol_board) & (mask[b] == 0)).sum().item())
 
             total_cells = int((mask[b] == 0).sum().item())
 
-            for e in events_0:
+            for e in events_fwd:
                 label = e.strategy.value if e.strategy else 'unknown'
                 forward_counts[label] = forward_counts.get(label, 0) + 1
             for e in events_final:
@@ -418,7 +435,7 @@ def run_forward_vs_langevin(args: argparse.Namespace, model: SudokuJEPA, loader:
                 {
                     'forward_accuracy': forward_correct / max(total_cells, 1),
                     'langevin_accuracy': langevin_correct / max(total_cells, 1),
-                    'forward_events': len(events_0),
+                    'forward_events': len(events_fwd),
                     'langevin_events': len(events_final),
                 }
             )

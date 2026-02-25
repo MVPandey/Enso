@@ -1,6 +1,6 @@
 import torch
 
-from ebm.interpretability.ablation import HeadAblator, _make_ablation_hook
+from ebm.interpretability.ablation import HeadAblator
 from ebm.interpretability.types import AblationResult, HeadProfile
 from ebm.model.jepa import InferenceConfig, SudokuJEPA
 from ebm.utils.config import ArchitectureConfig, TrainingConfig
@@ -29,29 +29,54 @@ def _make_batch(b=1):
     return puzzle, solution, mask
 
 
-def test_make_ablation_hook():
-    hook = _make_ablation_hook(head_indices=[0], n_heads=4, d_head=8)
-    assert callable(hook)
+def test_apply_weight_ablation():
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    ablator = HeadAblator(model)
+
+    # Find an MHA module
+    mha_paths = []
+    for name, mod in model.named_modules():
+        if isinstance(mod, torch.nn.MultiheadAttention):
+            mha_paths.append(name)
+
+    if mha_paths:
+        path = mha_paths[0]
+        module = dict(model.named_modules())[path]
+        original_weight = module.out_proj.weight.data.clone()
+        d_head = module.embed_dim // module.num_heads
+
+        saved = ablator._apply_weight_ablation([(path, 0)])
+
+        # Head 0 columns should be zeroed
+        assert (module.out_proj.weight.data[:, :d_head] == 0).all()
+        # Other columns should be unchanged
+        assert torch.allclose(module.out_proj.weight.data[:, d_head:], original_weight[:, d_head:])
+
+        # Restore should bring back original weights
+        ablator._restore_weights(saved)
+        assert torch.allclose(module.out_proj.weight.data, original_weight)
 
 
-def test_ablation_hook_zeros_head():
-    n_heads = 4
-    d_head = 8
-    d_model = n_heads * d_head
-    hook = _make_ablation_hook(head_indices=[1], n_heads=n_heads, d_head=d_head)
+def test_weight_ablation_multiple_heads():
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    ablator = HeadAblator(model)
 
-    attn_output = torch.randn(2, 81, d_model)
-    attn_weights = torch.randn(2, n_heads, 81, 81)
-    output = (attn_output, attn_weights)
+    mha_paths = []
+    for name, mod in model.named_modules():
+        if isinstance(mod, torch.nn.MultiheadAttention):
+            mha_paths.append(name)
 
-    modified_output, _modified_weights = hook(None, None, output)
+    if mha_paths:
+        path = mha_paths[0]
+        module = dict(model.named_modules())[path]
+        d_head = module.embed_dim // module.num_heads
 
-    # Head 1 should be zeroed (indices 8:16)
-    assert (modified_output[:, :, 8:16] == 0).all()
-    # Head 0 should be unchanged
-    assert torch.allclose(modified_output[:, :, :8], attn_output[:, :, :8])
-    # Head 2 should be unchanged
-    assert torch.allclose(modified_output[:, :, 16:24], attn_output[:, :, 16:24])
+        saved = ablator._apply_weight_ablation([(path, 0), (path, 1)])
+
+        # Heads 0 and 1 should be zeroed
+        assert (module.out_proj.weight.data[:, : 2 * d_head] == 0).all()
+
+        ablator._restore_weights(saved)
 
 
 def test_head_ablator_init():
@@ -151,10 +176,12 @@ def test_compute_accuracy():
     ablator = HeadAblator(model)
 
     # Perfect board
+    puzzle = torch.zeros(1, 10, 9, 9)
+    puzzle[:, 0] = 1.0  # empty channel active (no clues)
     solution = torch.zeros(1, 9, 9, 9)
     solution[:, :, :, 0] = 1.0  # all digit 1
     board = torch.ones(1, 9, 9, dtype=torch.long)  # all 1s
     mask = torch.zeros(1, 9, 9)
 
-    acc, _strat_acc = ablator._compute_accuracy(board, solution, mask)
+    acc, _strat_acc = ablator._compute_accuracy(board, puzzle, solution, mask)
     assert acc == 1.0
