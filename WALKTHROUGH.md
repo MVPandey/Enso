@@ -56,6 +56,13 @@ A deep dive into the theory, architecture, and implementation of an Energy-Based
     - [Project Structure](#project-structure)
     - [File-by-File Guide](#file-by-file-guide)
     - [End-to-End Data Flow](#end-to-end-data-flow)
+12. [Mechanistic Interpretability Infrastructure](#12-mechanistic-interpretability-infrastructure)
+    - [Motivation](#motivation)
+    - [Architecture](#architecture)
+    - [Attention Extraction](#attention-extraction)
+    - [Trajectory Recording](#trajectory-recording)
+    - [Strategy Detection](#strategy-detection)
+    - [Analysis Pipeline](#analysis-pipeline)
 
 ---
 
@@ -782,12 +789,19 @@ src/ebm/
     evaluation/
         solver.py           # Batch Langevin solving
         metrics.py          # EvalMetrics (cell/puzzle acc, constraints)
+    interpretability/
+        types.py            # Shared dataclasses (StepSnapshot, Trajectory, etc.)
+        attention.py        # AttentionExtractor (hook-based MHA weight capture)
+        recorder.py         # TrajectoryRecorder (instrumented Langevin loop)
+        strategies.py       # StrategyDetector (Naked Single, Hidden Single)
+        analysis.py         # TrajectoryAnalyzer (strategy-attention correlation)
     utils/
         config.py           # Pydantic configs (arch, training, env)
         device.py           # GPU detection + auto-scaling
-tests/                      # 101 unit tests, >96% coverage
+tests/                      # 140 unit tests, >97% coverage
 scripts/
     eval_checkpoint.py      # Standalone evaluation + visualization
+    run_interpretability.py # Mechanistic interpretability experiment runner
 ```
 
 ### File-by-File Guide
@@ -829,6 +843,18 @@ scripts/
 **`src/ebm/evaluation/metrics.py`** — `evaluate()` aggregates cell accuracy, puzzle accuracy, and constraint satisfaction across batches. `_constraint_satisfaction` sorts each group's predicted digits and checks against [1,2,...,9].
 
 **`src/ebm/main.py`** — CLI entry point with `train` and `eval` subcommands. Orchestrates dataset loading, splitting, model creation, training/evaluation, and device management.
+
+**`src/ebm/interpretability/types.py`** — Shared dataclasses for the interpretability module. `StepSnapshot` captures one Langevin step's full state ($\mathbf{z}$, logits, probs, board, energy components, gradient norm, optional attention maps). `Trajectory` wraps a complete sequence of snapshots with the input puzzle and solution. `CellEvent` records a single cell-fill event with its classified strategy and confidence. `StrategyLabel` enumerates human Sudoku strategies. `AnalysisResult` aggregates events with strategy counts and attention groupings.
+
+**`src/ebm/interpretability/attention.py`** — `AttentionExtractor` uses PyTorch's `register_forward_pre_hook` (with `with_kwargs=True`) on `nn.MultiheadAttention` modules to inject `need_weights=True` and `average_attn_weights=False`, then captures per-head attention weight tensors via a forward hook. Discovers MHA modules in both the context encoder and decoder. Supports context manager usage for clean attach/detach lifecycle. The target encoder's attention is not captured (it's frozen and used only for self-consistency re-encoding).
+
+**`src/ebm/interpretability/recorder.py`** — `TrajectoryRecorder` re-implements the Langevin dynamics loop from `SudokuJEPA.solve()` as a single-chain trajectory that records $\mathbf{z}$, logits, softmax probabilities, self-consistency energy, constraint penalty, gradient L2 norm, and the discrete board at every step. Attention maps are captured at a configurable stride (default every 5 steps) via the `AttentionExtractor`. Single-chain (no multi-chain ensemble) to provide a clean, traceable trajectory for interpretability analysis.
+
+**`src/ebm/interpretability/strategies.py`** — `StrategyDetector` classifies cell-fill events using rule-based Sudoku strategy detection. `get_candidates()` computes a (9, 9, 9) boolean tensor of valid candidates per cell based on row, column, and box elimination. `classify()` compares consecutive board snapshots, builds a reference board for candidate analysis, and classifies each changed cell as Naked Single (exactly one candidate), Hidden Single (digit can only go in one cell within a constraint group), or Unknown. Handles both traditional boards (0 = empty) and Langevin trajectory boards (all cells always filled from argmax).
+
+**`src/ebm/interpretability/analysis.py`** — `TrajectoryAnalyzer` ties everything together. Iterates consecutive step pairs in a trajectory, detects cell-fill events via `StrategyDetector`, and collects the corresponding attention maps from the nearest captured step. Returns an `AnalysisResult` with strategy counts, events grouped by step, and attention tensors grouped by strategy label.
+
+**`scripts/run_interpretability.py`** — Experiment runner that loads a checkpoint, records Langevin trajectories with attention capture, runs strategy detection and analysis, and saves summary statistics and per-event details as JSON to `results/interpretability/`.
 
 **`scripts/eval_checkpoint.py`** — Standalone script that loads a specific checkpoint, runs forward-pass evaluation on ~1K test puzzles, runs Langevin evaluation on 100 puzzles, prints example grids with error highlighting, and summarizes the Langevin delta.
 
@@ -885,6 +911,104 @@ SudokuJEPA.solve(puzzle, mask):
   select min-energy chain                         → best_logits: (1, 9, 9, 9)
   argmax + 1                                      → solution: (1, 9, 9)
 ```
+
+---
+
+## 12. Mechanistic Interpretability Infrastructure
+
+The model achieves 96.6% puzzle accuracy through 50 steps of Langevin dynamics in a continuous latent space. But what is it actually computing during those 50 steps? Mechanistic interpretability asks: at each step, which cells change, what Sudoku strategy (if any) explains each change, and which attention heads drive the computation?
+
+No prior work maps continuous Langevin trajectories to discrete human-interpretable reasoning strategies. This module provides the experiment infrastructure to answer that question.
+
+### Motivation
+
+The Langevin solve loop is a black box: random $\mathbf{z}$ goes in, a solved Sudoku comes out. The 50 intermediate states are discarded. But those intermediate states contain a rich signal: the model doesn't snap to the correct solution instantly. It iteratively refines, resolving easy cells first and hard cells later. If the model's refinement order correlates with human solving strategies (Naked Singles before Hidden Singles, easy constraint groups before hard ones), that's strong evidence that the energy landscape has learned human-interpretable structure despite never being trained on strategy labels.
+
+### Architecture
+
+The interpretability module (`src/ebm/interpretability/`) is entirely external to the model --- it instruments the existing `SudokuJEPA` via hooks and a reimplemented solve loop without modifying any production code:
+
+```
+AttentionExtractor ──┐
+                     ├──→ TrajectoryRecorder ──→ Trajectory
+StrategyDetector ────┤
+                     └──→ TrajectoryAnalyzer ──→ AnalysisResult
+```
+
+**`types.py`** defines the data structures that flow between components:
+
+- **`StepSnapshot`** captures one Langevin step's complete state: $\mathbf{z} \in \mathbb{R}^{B \times d_{\text{latent}}}$, raw logits, softmax probabilities, the discrete argmax board, total energy with its self-consistency and constraint penalty components, gradient L2 norm, and optional per-layer attention maps for both encoder and decoder.
+
+- **`Trajectory`** wraps the full sequence of `StepSnapshot`s alongside the input puzzle, ground-truth solution, and clue mask.
+
+- **`CellEvent`** records a detected cell-fill event: the step index, cell position, digit placed, classified strategy, and the model's softmax confidence at the time of placement.
+
+- **`StrategyLabel`** enumerates the supported human strategies: `NAKED_SINGLE`, `HIDDEN_SINGLE`, and `UNKNOWN` (with `POINTING_PAIR`, `BOX_LINE_REDUCTION`, and `NAKED_PAIR` reserved for future work).
+
+### Attention Extraction
+
+`AttentionExtractor` solves a practical problem: PyTorch's `TransformerEncoderLayer` calls its internal `MultiheadAttention` with `need_weights=False` by default, discarding the attention weight matrices. We need those matrices to analyze which cells attend to which during each Langevin step.
+
+The solution uses two hooks per `nn.MultiheadAttention` module:
+
+1. **Forward pre-hook** (registered with `with_kwargs=True`): intercepts the MHA call before it executes and injects `need_weights=True, average_attn_weights=False` into the kwargs. This forces MHA to compute and return per-head attention weights of shape $(B, n_{\text{heads}}, 81, 81)$.
+
+2. **Forward hook**: captures the returned attention weight tensor from the MHA output tuple and stores it in a keyed buffer (`encoder.<layer_path>` or `decoder.<layer_path>`).
+
+The extractor discovers all MHA modules in the context encoder and decoder via `named_modules()`. The target encoder is excluded because it runs inside the Langevin loop only for self-consistency re-encoding (with frozen weights) and its attention patterns are less informative than the decoder's, which directly produces cell predictions.
+
+Context manager support ensures clean hook lifecycle:
+
+```python
+with AttentionExtractor(model) as ext:
+    model(puzzle, solution, mask)
+    maps = ext.get_attention_maps()  # dict[str, Tensor], clears buffer
+```
+
+### Trajectory Recording
+
+`TrajectoryRecorder` reimplements the Langevin loop from `SudokuJEPA.solve()` with full state capture. The key differences from the production `solve()`:
+
+1. **Single chain**: no multi-chain ensemble. We trace one trajectory to get a clean causal sequence of refinements, rather than selecting the best outcome from 8 independent chains.
+
+2. **Full state capture**: at every step, records $\mathbf{z}$, logits, probabilities, the argmax board, total energy, self-consistency, constraint penalty, and gradient norm.
+
+3. **Strided attention**: attention maps are expensive ($B \times n_{\text{heads}} \times 81 \times 81$ per layer per step). They're captured only every `attention_stride` steps (default 5, giving 10 snapshots over 50 steps). Steps without attention capture have `encoder_attention=None, decoder_attention=None`.
+
+4. **Attach/detach per capture**: the `AttentionExtractor` hooks are attached only for the specific steps where attention is recorded, then immediately detached. This avoids any overhead on non-capture steps.
+
+The recorder operates correctly inside `torch.no_grad()` contexts because it uses `torch.enable_grad()` internally (matching the production solve loop's pattern).
+
+### Strategy Detection
+
+`StrategyDetector` is a pure-logic Sudoku strategy classifier that operates on discrete board snapshots. Given two consecutive boards (before and after), it identifies which cells changed and classifies each change:
+
+**Candidate computation** (`get_candidates`): for a given board state, computes a $(9, 9, 9)$ boolean tensor where entry $[r, c, d]$ is `True` if digit $d+1$ is a valid candidate for cell $(r, c)$ --- meaning it doesn't appear in the cell's row, column, or $3 \times 3$ box.
+
+**Naked Single**: a cell has exactly one valid candidate. This is the simplest strategy --- after eliminating all digits present in the cell's row, column, and box, only one possibility remains. The classifier checks `candidates[r, c].sum() == 1`.
+
+**Hidden Single**: a digit can only go in one cell within a constraint group. The cell may have multiple candidates, but within its row, column, or box, it's the only place for that specific digit. The classifier checks `candidates[row, :, d].sum() == 1` (row), `candidates[:, col, d].sum() == 1` (column), and the box equivalent.
+
+**Handling Langevin boards**: the production model always produces fully-filled boards (via `argmax + 1`), never boards with empty cells. The classifier handles this by building a "reference board" for candidate computation: cells that are identical in both snapshots keep their digits, while cells that changed between steps are treated as empty. This correctly identifies which strategies apply to the changed cells based on the stable context.
+
+Naked Single and Hidden Single cover approximately 90% of cell fills in typical Sudoku puzzles and are the most interpretable. More advanced strategies (Pointing Pairs, Box-Line Reduction, Naked Pairs) can be added once the infrastructure proves useful.
+
+### Analysis Pipeline
+
+`TrajectoryAnalyzer` ties everything together. Given a `Trajectory` and a batch index:
+
+1. Iterates consecutive step pairs, calling `StrategyDetector.classify()` on each pair's boards to detect cell-fill events.
+2. Tags each event with the Langevin step index where it occurred.
+3. Aggregates events by strategy label (counts) and by step (temporal ordering).
+4. Collects the corresponding attention maps for each event's step (falling back from encoder to decoder attention, since the context encoder runs once before the loop and its attention is only captured during the training forward pass, not during the Langevin loop).
+
+The result is an `AnalysisResult` containing:
+- All cell-fill events with strategy labels and confidence values
+- Strategy frequency distribution
+- Events grouped by Langevin step (revealing temporal ordering of strategies)
+- Attention maps grouped by strategy (enabling comparison of attention patterns across strategy types)
+
+The experiment script (`scripts/run_interpretability.py`) orchestrates the full pipeline: load checkpoint, record trajectories, run analysis, save JSON results.
 
 ---
 
