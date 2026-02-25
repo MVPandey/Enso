@@ -101,6 +101,82 @@ Five critical bugs fixed before meaningful training: (1) solution tensor encodin
 
 ---
 
+## Mechanistic Interpretability (Run 5 checkpoint)
+
+**Date:** Feb 24 | **Hardware:** H200 | **Checkpoint:** epoch019_acc0.9926 | **Puzzles:** 100 test
+
+Five experiments probing how the model reasons during Langevin dynamics. Full results on [W&B](https://wandb.ai/mvpandey-ebm/Sudoku%20EBM/runs/z99e5a0x).
+
+### Experiment 1: Trajectory Decomposition
+
+Tracked lock-in times — when each cell commits to its final correct digit (probability > 0.9, sustained).
+
+![Lock-in Analysis](assets/interp_lock_in.png)
+
+- **41.5 lock-ins per puzzle** (out of ~55 empty cells)
+- Vast majority lock in within steps 0-2 — the model converges extremely fast
+- Long tail of stragglers requiring the full 50 steps
+- 93% strategy coverage (only 7% of events classified as UNKNOWN)
+
+### Experiment 2: Strategy Progression
+
+Classified cell-change events during the trajectory using a hierarchical strategy detector (Naked Singles through X-Wings).
+
+![Strategy Progression](assets/interp_strategy_progression.png)
+
+- **45 total events** across 100 puzzles (0.7 events/puzzle)
+- 56% Naked Singles, 4% Hidden Singles, 40% Unknown
+- Most changes in early steps — consistent with rapid convergence
+- Low event count reflects how quickly the model arrives at the correct solution; few cells actually change digit during the trajectory
+
+### Experiment 3: Attention Head Specialization
+
+Profiled all 32 decoder attention heads by measuring within-group attention ratios (row/column/box focus).
+
+![Head Specialization](assets/interp_head_specialization.png)
+
+| Specialization | Count | Layers |
+|---|---|---|
+| Box | 9 | Layers 1, 3 |
+| Row | 5 | Layers 1, 3 |
+| Column | 5 | Layer 2 |
+| Mixed | 13 | Layer 0 (all), scattered in 1-3 |
+
+Layer 0 shows no specialization (all gray/mixed), while deeper layers develop distinct structural roles. Layer 2 has the strongest column specialization (blue). This mirrors human Sudoku solving — check rows, columns, and boxes as separate constraint types.
+
+### Experiment 4: Causal Ablation
+
+Zeroed out_proj weight columns for individual decoder heads to measure causal impact.
+
+![Ablation Impact](assets/interp_ablation_impact.png)
+
+- **High redundancy:** 7/10 ablated heads had zero accuracy impact
+- **One critical head:** Decoder layer 1, head 6 — ablating it drops accuracy by 1.6%
+- **Interference patterns:** Ablating layer 1 head 2 *improved* accuracy by 1.6%, suggesting it causes mild interference at this checkpoint
+- The model distributes knowledge across heads rather than relying on individual specialists
+
+### Experiment 5: Forward Pass vs Langevin Dynamics
+
+Compared oracle forward pass (ideal z from solution encoder) vs Langevin dynamics from random z.
+
+![Forward vs Langevin](assets/interp_forward_vs_langevin.png)
+
+| Metric | Oracle | Langevin |
+|---|---|---|
+| Mean accuracy | 99.50% | 99.44% |
+| Recovery ratio | — | 99.96% |
+
+Langevin recovers virtually all oracle performance from random initialization. The strategy distribution of the final solutions shows the full hierarchy: Hidden Singles (1,103), Naked Singles (634), Naked Pairs (165), Naked Triples (143), Box-Line Reduction (97), Pointing Pairs (71), Hidden Pairs (56), Hidden Triples (37), X-Wings (20), Unknown (1,936).
+
+### Interpretability Takeaways
+
+1. **The model reasons in parallel, not sequentially.** Unlike human solvers who progress from easy to hard strategies, the model locks in most cells simultaneously within 2-3 steps. The Spearman correlation between strategy difficulty and lock-in step is near zero.
+2. **Structural specialization emerges naturally.** Attention heads self-organize into row, column, and box specialists — matching the three constraint types of Sudoku — without any explicit encouragement to do so.
+3. **The model is highly redundant.** Individual head ablation rarely hurts accuracy, suggesting distributed representations. This is consistent with the model's robustness and explains why Langevin dynamics can recover from random initialization so effectively.
+4. **Langevin's value is in showing the process.** The oracle and Langevin reach essentially the same answer. The forward pass gives you the solution; the Langevin trajectory shows you the reasoning — which cells the model is uncertain about, how they resolve, and through what computational pathway.
+
+---
+
 ## Key Lessons
 
 - **Representation collapse is the primary failure mode.** Without VICReg on the right tensor (`z_context`, not `z_pred`), encoders collapse to a point. Monitor z_variance.
