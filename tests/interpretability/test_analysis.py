@@ -3,7 +3,7 @@ import torch
 from ebm.interpretability.analysis import TrajectoryAnalyzer
 from ebm.interpretability.recorder import TrajectoryRecorder
 from ebm.interpretability.strategies import StrategyDetector
-from ebm.interpretability.types import AnalysisResult, StepSnapshot, Trajectory
+from ebm.interpretability.types import AnalysisResult, HeadProfile, StepSnapshot, Trajectory, TrajectoryMetrics
 from ebm.model.jepa import InferenceConfig, SudokuJEPA
 from ebm.utils.config import ArchitectureConfig, TrainingConfig
 
@@ -198,3 +198,52 @@ def test_empty_trajectory_no_crash():
     result = analyzer.analyze_trajectory(traj, batch_idx=0)
 
     assert len(result.events) == 0
+
+
+def test_full_analysis_returns_three_outputs():
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    model.eval()
+    recorder = TrajectoryRecorder(model, record_attention=False)
+    puzzle, solution, mask = _make_batch(b=1)
+    traj = recorder.record(puzzle, mask, solution, SMALL_INFERENCE)
+
+    analyzer = TrajectoryAnalyzer()
+    result, metrics, profiles = analyzer.full_analysis(traj, solution, batch_idx=0)
+
+    assert isinstance(result, AnalysisResult)
+    assert isinstance(metrics, TrajectoryMetrics)
+    assert isinstance(profiles, list)
+
+
+def test_full_analysis_with_attention():
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    model.eval()
+    recorder = TrajectoryRecorder(model, record_attention=True, attention_stride=1)
+    puzzle, solution, mask = _make_batch(b=1)
+    traj = recorder.record(puzzle, mask, solution, SMALL_INFERENCE)
+
+    analyzer = TrajectoryAnalyzer()
+    result, metrics, profiles = analyzer.full_analysis(traj, solution, batch_idx=0)
+
+    assert isinstance(result, AnalysisResult)
+    assert isinstance(metrics, TrajectoryMetrics)
+    # With attention captured, profiles should be non-empty
+    assert isinstance(profiles, list)
+    if profiles:
+        assert all(isinstance(p, HeadProfile) for p in profiles)
+
+
+def test_full_analysis_metrics_coverage():
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    model.eval()
+    recorder = TrajectoryRecorder(model, record_attention=False)
+    puzzle, solution, mask = _make_batch(b=1)
+    traj = recorder.record(puzzle, mask, solution, SMALL_INFERENCE)
+
+    analyzer = TrajectoryAnalyzer()
+    _, metrics, _ = analyzer.full_analysis(traj, solution, batch_idx=0)
+
+    assert 0 <= metrics.strategy_coverage <= 1.0
+    assert isinstance(metrics.lock_in_events, list)
+    assert isinstance(metrics.energy_decomposition, list)
+    assert len(metrics.energy_decomposition) == len(traj.steps)

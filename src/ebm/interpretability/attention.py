@@ -57,9 +57,7 @@ class AttentionExtractor:
         for name, submodule in module.named_modules():
             if isinstance(submodule, nn.MultiheadAttention):
                 key = f'{prefix}.{name}'
-                self._handles.append(
-                    submodule.register_forward_pre_hook(self._make_pre_hook(), with_kwargs=True)
-                )
+                self._handles.append(submodule.register_forward_pre_hook(self._make_pre_hook(), with_kwargs=True))
                 self._handles.append(submodule.register_forward_hook(self._make_post_hook(key)))
 
     @staticmethod

@@ -16,6 +16,10 @@ class StrategyLabel(Enum):
     POINTING_PAIR = 'pointing_pair'
     BOX_LINE_REDUCTION = 'box_line_reduction'
     NAKED_PAIR = 'naked_pair'
+    HIDDEN_PAIR = 'hidden_pair'
+    NAKED_TRIPLE = 'naked_triple'
+    HIDDEN_TRIPLE = 'hidden_triple'
+    X_WING = 'x_wing'
     UNKNOWN = 'unknown'
 
 
@@ -57,6 +61,52 @@ class CellEvent:
     digit: int
     strategy: StrategyLabel | None = None
     confidence: float = 0.0
+
+
+@dataclass
+class HeadProfile:
+    """Structural specialization scores for one attention head."""
+
+    layer: str
+    head_idx: int
+    row_score: float
+    col_score: float
+    box_score: float
+    specialization: str  # 'row', 'column', 'box', or 'mixed'
+
+
+@dataclass
+class LockInEvent:
+    """When a cell locks in to its final correct digit."""
+
+    row: int
+    col: int
+    digit: int
+    lock_in_step: int
+    strategy: StrategyLabel
+    confidence_at_lock: float
+
+
+@dataclass
+class TrajectoryMetrics:
+    """Quantitative interpretability metrics for one trajectory."""
+
+    strategy_coverage: float
+    lock_in_events: list[LockInEvent]
+    step_strategy_correlation: float
+    phase_boundaries: list[int]
+    energy_decomposition: list[tuple[int, float, float]]
+
+
+@dataclass
+class AblationResult:
+    """Results from a head ablation experiment."""
+
+    ablated_heads: list[tuple[str, int]]
+    overall_accuracy: float
+    strategy_accuracy: dict[str, float]
+    baseline_accuracy: float
+    baseline_strategy_accuracy: dict[str, float]
 
 
 @dataclass
