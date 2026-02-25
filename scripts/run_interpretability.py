@@ -25,7 +25,7 @@ from torch.utils.data import DataLoader
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from ebm.dataset import SudokuDataset, SudokuTorchDataset, split_dataset
+from ebm.dataset import SudokuDataset, SudokuTorchDataset
 from ebm.interpretability import (
     STRATEGY_DIFFICULTY,
     AttentionAnalyzer,
@@ -77,11 +77,15 @@ def load_model(checkpoint_path: Path, device: torch.device) -> SudokuJEPA:
 
 
 def load_test_data(num_puzzles: int, batch_size: int) -> DataLoader:
-    """Load test puzzles from the Kaggle dataset."""
+    """
+    Load test puzzles from the Kaggle dataset.
+
+    Uses the tail of the full dataset to avoid overlap with training data
+    (training uses the head via split_dataset).
+    """
     ds = SudokuDataset()
-    df = ds.load_head(num_puzzles * 20)
-    _, _, test_df = split_dataset(df)
-    test_df = test_df.head(num_puzzles)
+    df = ds.load_all()
+    test_df = df.tail(num_puzzles).reset_index(drop=True)
     test_ds = SudokuTorchDataset(test_df)
     return DataLoader(test_ds, batch_size=batch_size, shuffle=False)
 
