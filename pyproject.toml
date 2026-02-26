@@ -12,6 +12,7 @@ dependencies = [
     "pandas>=3.0.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
+    "scipy>=1.15.0",
     "scikit-learn>=1.8.0",
     "torch>=2.10.0",
     "wandb>=0.24.2",
@@ -52,7 +53,7 @@ line-length = 120
 [tool.ruff.lint]
 extend-select = ["D", "RUF", "PT", "TID", "I", "PL"]
 ignore = ["D203", "D212"]
-per-file-ignores = { "tests/**/*.py" = ["D", "PLR2004"], "*_test.py" = ["D", "PLR2004"] }
+per-file-ignores = { "tests/**/*.py" = ["D", "PLR2004"], "*_test.py" = ["D", "PLR2004"], "src/ebm/interpretability/strategies.py" = ["PLR2004", "PLR0912"], "src/ebm/interpretability/attention_analysis.py" = ["PLR2004"], "src/ebm/interpretability/metrics.py" = ["PLR2004"], "src/ebm/interpretability/difficulty.py" = ["PLR2004"], "src/ebm/interpretability/landscape.py" = ["PLR0913"], "scripts/*.py" = ["PLR0915", "PLR2004", "PLR0913", "PLR0912"] }
 
 [tool.ruff.format]
 quote-style = "single"

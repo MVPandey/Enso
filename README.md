@@ -120,6 +120,76 @@ Note: Kona's 96.2% is on hard puzzles specifically; our evaluation set includes 
 
 See [training-log.md](training-log.md) for detailed run history and lessons learned.
 
+## Mechanistic Interpretability
+
+We built a mechanistic interpretability pipeline to understand *how* the model reasons during Langevin dynamics. Twelve experiments probe different aspects of the model's internal computation — five Phase 2 experiments establish the baseline findings, and seven Phase 3 experiments validate whether the observed "rapid crystallization" is a genuine energy landscape property or an artifact.
+
+### Experiment 1: Trajectory Decomposition
+
+Tracks when each cell "locks in" to its final correct digit during the Langevin trajectory. Lock-in = first step where the probability for the correct digit exceeds 0.9 and never drops below 0.855 for the remaining steps.
+
+![Lock-in Analysis](assets/interp_lock_in.png)
+
+**Finding:** The vast majority of cells lock in within the first 2-3 Langevin steps — the model converges extremely quickly, with a long tail of harder cells that require the full 50 steps. Average 41.5 lock-ins per puzzle (out of ~55 empty cells), with 93% strategy coverage.
+
+### Experiment 2: Strategy Progression
+
+Classifies each cell-fill event during the trajectory using a hierarchical Sudoku strategy detector (Naked Singles through X-Wings). Events are detected when a cell changes its argmax digit between consecutive steps.
+
+![Strategy Progression](assets/interp_strategy_progression.png)
+
+**Finding:** Most cell changes occur in the first few Langevin steps, dominated by Naked Singles (56%). The model's rapid convergence means few intermediate digit changes are observed — it largely "gets it right" on the first few iterations, consistent with the lock-in analysis above.
+
+### Experiment 3: Attention Head Specialization
+
+Profiles all 32 decoder attention heads by measuring within-group attention ratios: how much each head attends within rows, columns, or 3x3 boxes versus the overall baseline.
+
+![Head Specialization](assets/interp_head_specialization.png)
+
+**Finding:** Clear structural specialization emerges. Of 32 decoder heads: 5 specialize in rows (red), 5 in columns (blue), 9 in boxes (green), and 13 remain mixed (gray). Layer 0 shows no specialization (all gray), while layers 1-3 develop increasingly distinct roles — suggesting the model builds from generic to constraint-specific representations across depth.
+
+### Experiment 4: Causal Ablation
+
+Zeroes out the `out_proj` weight columns for individual attention heads and measures the accuracy impact, establishing causal (not just correlational) evidence for head function.
+
+![Ablation Impact](assets/interp_ablation_impact.png)
+
+**Finding:** The model is highly redundant — ablating most individual heads has zero impact on accuracy. One head (decoder layer 1, head 6) stands out with a 1.6% accuracy drop when ablated, suggesting it plays a unique causal role. Interestingly, some ablations *improve* accuracy slightly (layer 1 head 2: +1.6%), suggesting mild interference patterns.
+
+### Experiment 5: Forward Pass vs Langevin Dynamics
+
+Compares the oracle forward pass (encoding the solution to get an ideal latent z, then decoding) against Langevin dynamics starting from random z. The oracle represents the decoder's capacity ceiling.
+
+![Forward vs Langevin](assets/interp_forward_vs_langevin.png)
+
+**Finding:** Oracle accuracy: 99.5%. Langevin accuracy: 99.4%. Recovery ratio: 99.96%. Langevin dynamics recovers nearly all of the oracle's performance from random initialization. The strategy distributions are identical because both paths arrive at the same solution — the difference is that the forward pass gives the answer instantly while Langevin shows the *reasoning process* through its trajectory. The right panel confirms the full range of solving strategies is present in the final solutions: Hidden Singles (1,103), Naked Singles (634), Naked Pairs (165), Naked Triples (143), Box-Line Reduction (97), Pointing Pairs (71), Hidden Pairs (56), Hidden Triples (37), and X-Wings (20).
+
+### Phase 3: Crystallization Validation (Experiments 6-12)
+
+Phase 2 found that most cells lock in within 2-3 Langevin steps. Phase 3 asks: is this genuine, or an artifact? Seven targeted experiments distinguish real from artifact.
+
+**Experiment 6: Learning Rate Sweep** (`lr-sweep`) — Varies lr from 0.001 to 0.5 and checks whether lock-in happens at the same *energy level* regardless of lr (genuine phase transition) or always at step 1-2 (step-size artifact).
+
+**Experiment 7: Difficulty Stratification** (`difficulty-stratification`) — Partitions puzzles into easy (30+ givens), medium (25-29), and hard (<25) buckets. Checks whether harder puzzles show genuinely slower convergence.
+
+**Experiment 8: Z-Dependence Test** (`z-dependence`) — Compares accuracy for z=zeros, z=random (no dynamics), Langevin, and oracle z. If z=0 accuracy matches Langevin, the decoder ignores z entirely.
+
+**Experiment 9: Energy Cross-Section** (`energy-landscape`) — Evaluates energy along the linear path from random z to oracle z. Monotonic decrease indicates a funnel topology.
+
+**Experiment 10: Latent Trajectory** (`latent-trajectory`) — Tracks L2 distance and cosine similarity between Langevin z and oracle z* at each step. Reveals whether the dynamics converge toward the oracle or a different minimum.
+
+**Experiment 11: Multi-Chain Divergence** (`multi-chain-divergence`) — Runs 16 independent chains per puzzle. Classifies each puzzle as single-basin (all chains → same z), multiple-basins (different z, same board), or disagreement.
+
+**Experiment 12: Probability Curves** (`probability-curves`) — Tracks P(correct digit) confidence curves for each empty cell, grouped by strategy type. Even if argmax doesn't change, confidence ramp-up speed may correlate with difficulty.
+
+### Paper Readiness
+
+The infrastructure is complete and the initial results are informative, but several aspects need further investigation for publication:
+
+1. **Low event count in trajectory analysis** — The model converges so fast (most cells lock in by step 2-3) that only 0.7 cell-change events per puzzle are detected. Increasing the step count or decreasing the learning rate could slow convergence and reveal more of the reasoning process.
+2. **Strategy-step correlation is weak** — The Spearman rho is near zero, likely because the model solves most cells simultaneously rather than in a difficulty-ordered sequence. This itself is an interesting finding — the model's "reasoning" may be fundamentally parallel, unlike human sequential strategies.
+3. **Unknown bucket at 40% during trajectories** — While the final-board strategy classification achieves full coverage, the intermediate-step classification has higher unknown rates due to the approximate nature of classifying from partial trajectory states.
+
 ## Project Structure
 
 ```
@@ -148,10 +218,21 @@ src/ebm/
         config.py           # Pydantic configuration classes
         device.py           # GPU detection, auto-scaling batch size + LR
     main.py                 # CLI entry point
-tests/                      # Unit tests (101 tests, 96%+ coverage)
+    interpretability/
+        recorder.py         # Trajectory recording during Langevin dynamics
+        attention.py        # Hook-based attention weight extraction
+        strategies.py       # Hierarchical Sudoku strategy classifier (L1-L5)
+        attention_analysis.py # Head specialization scoring (row/col/box)
+        metrics.py          # Lock-in detection, Spearman correlation, phase transitions
+        ablation.py         # Weight-based causal head ablation
+        analysis.py         # Trajectory analysis pipeline
+        landscape.py        # Energy landscape probing (evaluate, interpolate, oracle z)
+        difficulty.py       # Puzzle difficulty classification (easy/medium/hard)
+tests/                      # Unit tests (120 interpretability tests, 95%+ coverage)
 scripts/
     smoke_test.py           # Quick training validation script
     plot_training.py        # Generate training curve comparison plots
+    run_interpretability.py # 12 mechanistic interpretability experiments
 ```
 
 ## Setup

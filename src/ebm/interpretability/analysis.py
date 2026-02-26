@@ -4,10 +4,19 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+import torch
 from torch import Tensor
 
+from ebm.interpretability.attention_analysis import AttentionAnalyzer
+from ebm.interpretability.metrics import MetricsComputer
 from ebm.interpretability.strategies import StrategyDetector
-from ebm.interpretability.types import AnalysisResult, CellEvent, Trajectory
+from ebm.interpretability.types import (
+    AnalysisResult,
+    CellEvent,
+    HeadProfile,
+    Trajectory,
+    TrajectoryMetrics,
+)
 
 
 class TrajectoryAnalyzer:
@@ -22,6 +31,8 @@ class TrajectoryAnalyzer:
     def __init__(self, strategy_detector: StrategyDetector | None = None) -> None:
         """Initialize with an optional custom strategy detector."""
         self._detector = strategy_detector or StrategyDetector()
+        self._attention_analyzer = AttentionAnalyzer()
+        self._metrics = MetricsComputer()
 
     def analyze_trajectory(self, trajectory: Trajectory, batch_idx: int = 0) -> AnalysisResult:
         """
@@ -72,6 +83,45 @@ class TrajectoryAnalyzer:
             strategy_by_step=dict(strategy_by_step),
             attention_by_strategy=dict(attention_by_strategy),
         )
+
+    def full_analysis(
+        self,
+        trajectory: Trajectory,
+        solution: Tensor,
+        batch_idx: int = 0,
+    ) -> tuple[AnalysisResult, TrajectoryMetrics, list[HeadProfile]]:
+        """
+        Run complete analysis: strategies + metrics + attention head profiling.
+
+        Args:
+            trajectory: Full trajectory from TrajectoryRecorder.
+            solution: (B, 9, 9, 9) one-hot ground truth.
+            batch_idx: Index into the batch dimension to analyze.
+
+        Returns:
+            Tuple of (AnalysisResult, TrajectoryMetrics, list[HeadProfile]).
+
+        """
+        result = self.analyze_trajectory(trajectory, batch_idx)
+        metrics = self._metrics.compute_all(trajectory, result.events, solution, batch_idx)
+
+        # Accumulate attention maps across all captured steps, averaging
+        # per layer so that profiling reflects the full trajectory rather
+        # than only the last captured step (dict.update would overwrite).
+        attn_accum: dict[str, list[Tensor]] = defaultdict(list)
+        for step in trajectory.steps:
+            for attn_dict in (step.encoder_attention, step.decoder_attention):
+                if attn_dict:
+                    for key, tensor in attn_dict.items():
+                        attn_accum[key].append(tensor)
+
+        all_attention: dict[str, Tensor] = {}
+        for key, tensors in attn_accum.items():
+            all_attention[key] = torch.stack(tensors).mean(dim=0)
+
+        profiles = self._attention_analyzer.compute_head_profiles(all_attention) if all_attention else []
+
+        return result, metrics, profiles
 
     @staticmethod
     def _get_attention_for_step(trajectory: Trajectory, step: int) -> Tensor | None:
