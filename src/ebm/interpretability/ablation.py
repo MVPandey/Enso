@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import torch
 from torch import Tensor, nn
 
@@ -193,7 +195,18 @@ class HeadAblator:
         for module_path, weight_data in saved.items():
             module = self._find_module(module_path)
             if module is not None:
-                module.out_proj.weight.data = weight_data
+                # Restore in-place to avoid breaking optimizer/state_dict references.
+                with torch.no_grad():
+                    module.out_proj.weight.copy_(weight_data)
+
+    # Mapping from generic prefixes (as produced by AttentionExtractor)
+    # to the concrete model attribute names.
+    _PREFIX_ALIASES: ClassVar[dict[str, str]] = {
+        'encoder': 'context_encoder',
+        'context': 'context_encoder',
+        'decoder': 'decoder',
+        'target': 'target_encoder',
+    }
 
     def _find_module(self, path: str) -> nn.Module | None:
         """Find a submodule by dot-separated path."""
@@ -202,12 +215,20 @@ class HeadAblator:
             parent = getattr(self._model, parent_name, None)
             if parent is None:
                 continue
+
+            # Normalize generic encoder prefix to the concrete module name.
+            # This allows keys like 'encoder.layers.0.self_attn' (from
+            # AttentionExtractor) to resolve to
+            # self._model.context_encoder.layers[0].self_attn.
+            normalized_path = path
+            first_segment = path.split('.', 1)[0]
+            alias_target = self._PREFIX_ALIASES.get(first_segment)
+            if alias_target == parent_name and first_segment != parent_name:
+                normalized_path = f'{parent_name}.{path.split(".", 1)[1]}' if '.' in path else parent_name
+
             prefix = f'{parent_name}.'
-            if path.startswith(prefix):
-                subpath = path[len(prefix) :]
-            elif path.startswith(parent_name.split('_')[0]):
-                # Handle abbreviated paths like 'encoder.layers.0.self_attn'
-                subpath = path.split('.', 1)[1] if '.' in path else path
+            if normalized_path.startswith(prefix):
+                subpath = normalized_path[len(prefix) :]
             else:
                 continue
 

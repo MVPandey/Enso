@@ -111,6 +111,12 @@ class AttentionAnalyzer:
             label = event.strategy.value if event.strategy else 'unknown'
             strategy_events[label].append(event)
 
+        # Precompute per-layer mean attention once to avoid redundant work
+        # across profiles (O(num_layers) instead of O(num_profiles)).
+        layer_mean_attn: dict[str, Tensor] = {}
+        for layer_key, attn in attention_maps.items():
+            layer_mean_attn[layer_key] = attn.float().mean(dim=0)  # (n_heads, 81, 81)
+
         result: dict[str, list[HeadProfile]] = {}
         for strategy_label, strat_events in strategy_events.items():
             # Collect positions for this strategy
@@ -121,10 +127,9 @@ class AttentionAnalyzer:
             # Score each head by its attention to these positions
             head_scores: list[tuple[HeadProfile, float]] = []
             for profile in profiles:
-                if profile.layer not in attention_maps:
+                if profile.layer not in layer_mean_attn:
                     continue
-                attn = attention_maps[profile.layer].float().mean(dim=0)  # (n_heads, 81, 81)
-                head_attn = attn[profile.head_idx]  # (81, 81)
+                head_attn = layer_mean_attn[profile.layer][profile.head_idx]  # (81, 81)
                 # Average attention received at the changed positions
                 score = sum(head_attn[:, pos].mean().item() for pos in positions) / len(positions)
                 head_scores.append((profile, score))

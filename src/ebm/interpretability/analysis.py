@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+import torch
 from torch import Tensor
 
 from ebm.interpretability.attention_analysis import AttentionAnalyzer
@@ -104,13 +105,19 @@ class TrajectoryAnalyzer:
         result = self.analyze_trajectory(trajectory, batch_idx)
         metrics = self._metrics.compute_all(trajectory, result.events, solution, batch_idx)
 
-        # Collect all attention maps from captured steps
-        all_attention: dict[str, Tensor] = {}
+        # Accumulate attention maps across all captured steps, averaging
+        # per layer so that profiling reflects the full trajectory rather
+        # than only the last captured step (dict.update would overwrite).
+        attn_accum: dict[str, list[Tensor]] = defaultdict(list)
         for step in trajectory.steps:
-            if step.encoder_attention:
-                all_attention.update(step.encoder_attention)
-            if step.decoder_attention:
-                all_attention.update(step.decoder_attention)
+            for attn_dict in (step.encoder_attention, step.decoder_attention):
+                if attn_dict:
+                    for key, tensor in attn_dict.items():
+                        attn_accum[key].append(tensor)
+
+        all_attention: dict[str, Tensor] = {}
+        for key, tensors in attn_accum.items():
+            all_attention[key] = torch.stack(tensors).mean(dim=0)
 
         profiles = self._attention_analyzer.compute_head_profiles(all_attention) if all_attention else []
 

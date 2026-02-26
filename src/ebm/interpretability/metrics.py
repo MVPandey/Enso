@@ -24,6 +24,7 @@ class MetricsComputer:
         trajectory: Trajectory,
         solution: Tensor,
         batch_idx: int,
+        cell_events: list[CellEvent] | None = None,
     ) -> list[LockInEvent]:
         """
         Detect when each cell locks in to its final correct digit.
@@ -35,6 +36,9 @@ class MetricsComputer:
             trajectory: Full trajectory from TrajectoryRecorder.
             solution: (B, 9, 9, 9) one-hot ground truth.
             batch_idx: Index into the batch dimension.
+            cell_events: Optional classified cell events. When provided, the
+                strategy of the closest preceding event at the same cell is
+                used to populate ``LockInEvent.strategy``.
 
         Returns:
             List of LockInEvent for each non-clue cell that locks in.
@@ -45,6 +49,13 @@ class MetricsComputer:
         n_steps = len(trajectory.steps)
         events: list[LockInEvent] = []
         sustain_threshold = self._threshold * 0.95
+
+        # Build a lookup from (row, col) -> strategy using the last CellEvent
+        # at that position (closest to the final locked-in state).
+        cell_strategy: dict[tuple[int, int], StrategyLabel] = {}
+        if cell_events:
+            for ev in cell_events:
+                cell_strategy[(ev.row, ev.col)] = ev.strategy or StrategyLabel.UNKNOWN
 
         for r in range(9):
             for c in range(9):
@@ -69,13 +80,14 @@ class MetricsComputer:
                             break
 
                 if lock_in_step is not None:
+                    strategy = cell_strategy.get((r, c), StrategyLabel.UNKNOWN)
                     events.append(
                         LockInEvent(
                             row=r,
                             col=c,
                             digit=correct_digit,
                             lock_in_step=lock_in_step,
-                            strategy=StrategyLabel.UNKNOWN,
+                            strategy=strategy,
                             confidence_at_lock=probs_series[lock_in_step],
                         )
                     )
@@ -214,7 +226,7 @@ class MetricsComputer:
             TrajectoryMetrics with all computed values.
 
         """
-        lock_in_events = self.compute_lock_in(trajectory, solution, batch_idx)
+        lock_in_events = self.compute_lock_in(trajectory, solution, batch_idx, cell_events=events)
         correlation = self.compute_strategy_step_correlation(events)
         phases = self.detect_phase_transitions(events)
         coverage = self.compute_strategy_coverage(events)
