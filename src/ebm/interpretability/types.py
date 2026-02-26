@@ -110,6 +110,34 @@ class AblationResult:
 
 
 @dataclass
+class EnergyProfile:
+    """Energy and its components at a specific z value."""
+
+    z: Tensor  # (B, d_latent)
+    energy: Tensor  # (B,)
+    self_consistency: Tensor  # (B,)
+    constraint_penalty: Tensor  # (B,)
+    logits: Tensor  # (B, 9, 9, 9)
+    probs: Tensor  # (B, 9, 9, 9)
+
+
+@dataclass
+class MultiChainTrajectory:
+    """Trajectory data for multiple Langevin chains on the same puzzle."""
+
+    puzzle: Tensor  # (B, 10, 9, 9)
+    solution: Tensor  # (B, 9, 9, 9)
+    mask: Tensor  # (B, 9, 9)
+    n_chains: int
+    n_steps: int
+    chain_z: Tensor  # (n_steps, B, n_chains, d_latent)
+    chain_energy: Tensor  # (n_steps, B, n_chains)
+    final_boards: Tensor  # (B, n_chains, 9, 9)
+    final_z: Tensor  # (B, n_chains, d_latent)
+    final_energies: Tensor  # (B, n_chains)
+
+
+@dataclass
 class AnalysisResult:
     """Aggregated analysis of a trajectory."""
 

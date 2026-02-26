@@ -181,6 +181,13 @@ class HeadAblator:
                 continue
 
             d_head = module.embed_dim // module.num_heads
+            for h in head_indices:
+                if not isinstance(h, int) or h < 0 or h >= module.num_heads:
+                    msg = (
+                        f"Invalid head index {h} for module '{module_path}'; "
+                        f'expected 0 <= head_idx < {module.num_heads}.'
+                    )
+                    raise ValueError(msg)
             saved[module_path] = module.out_proj.weight.data.clone()
             with torch.no_grad():
                 for h in head_indices:

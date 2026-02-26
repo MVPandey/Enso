@@ -122,7 +122,7 @@ See [training-log.md](training-log.md) for detailed run history and lessons lear
 
 ## Mechanistic Interpretability
 
-We built a mechanistic interpretability pipeline to understand *how* the model reasons during Langevin dynamics. Five experiments probe different aspects of the model's internal computation.
+We built a mechanistic interpretability pipeline to understand *how* the model reasons during Langevin dynamics. Twelve experiments probe different aspects of the model's internal computation — five Phase 2 experiments establish the baseline findings, and seven Phase 3 experiments validate whether the observed "rapid crystallization" is a genuine energy landscape property or an artifact.
 
 ### Experiment 1: Trajectory Decomposition
 
@@ -163,6 +163,24 @@ Compares the oracle forward pass (encoding the solution to get an ideal latent z
 ![Forward vs Langevin](assets/interp_forward_vs_langevin.png)
 
 **Finding:** Oracle accuracy: 99.5%. Langevin accuracy: 99.4%. Recovery ratio: 99.96%. Langevin dynamics recovers nearly all of the oracle's performance from random initialization. The strategy distributions are identical because both paths arrive at the same solution — the difference is that the forward pass gives the answer instantly while Langevin shows the *reasoning process* through its trajectory. The right panel confirms the full range of solving strategies is present in the final solutions: Hidden Singles (1,103), Naked Singles (634), Naked Pairs (165), Naked Triples (143), Box-Line Reduction (97), Pointing Pairs (71), Hidden Pairs (56), Hidden Triples (37), and X-Wings (20).
+
+### Phase 3: Crystallization Validation (Experiments 6-12)
+
+Phase 2 found that most cells lock in within 2-3 Langevin steps. Phase 3 asks: is this genuine, or an artifact? Seven targeted experiments distinguish real from artifact.
+
+**Experiment 6: Learning Rate Sweep** (`lr-sweep`) — Varies lr from 0.001 to 0.5 and checks whether lock-in happens at the same *energy level* regardless of lr (genuine phase transition) or always at step 1-2 (step-size artifact).
+
+**Experiment 7: Difficulty Stratification** (`difficulty-stratification`) — Partitions puzzles into easy (30+ givens), medium (25-29), and hard (<25) buckets. Checks whether harder puzzles show genuinely slower convergence.
+
+**Experiment 8: Z-Dependence Test** (`z-dependence`) — Compares accuracy for z=zeros, z=random (no dynamics), Langevin, and oracle z. If z=0 accuracy matches Langevin, the decoder ignores z entirely.
+
+**Experiment 9: Energy Cross-Section** (`energy-landscape`) — Evaluates energy along the linear path from random z to oracle z. Monotonic decrease indicates a funnel topology.
+
+**Experiment 10: Latent Trajectory** (`latent-trajectory`) — Tracks L2 distance and cosine similarity between Langevin z and oracle z* at each step. Reveals whether the dynamics converge toward the oracle or a different minimum.
+
+**Experiment 11: Multi-Chain Divergence** (`multi-chain-divergence`) — Runs 16 independent chains per puzzle. Classifies each puzzle as single-basin (all chains → same z), multiple-basins (different z, same board), or disagreement.
+
+**Experiment 12: Probability Curves** (`probability-curves`) — Tracks P(correct digit) confidence curves for each empty cell, grouped by strategy type. Even if argmax doesn't change, confidence ramp-up speed may correlate with difficulty.
 
 ### Paper Readiness
 
@@ -208,11 +226,13 @@ src/ebm/
         metrics.py          # Lock-in detection, Spearman correlation, phase transitions
         ablation.py         # Weight-based causal head ablation
         analysis.py         # Trajectory analysis pipeline
-tests/                      # Unit tests (187 tests, 95%+ coverage)
+        landscape.py        # Energy landscape probing (evaluate, interpolate, oracle z)
+        difficulty.py       # Puzzle difficulty classification (easy/medium/hard)
+tests/                      # Unit tests (120 interpretability tests, 95%+ coverage)
 scripts/
     smoke_test.py           # Quick training validation script
     plot_training.py        # Generate training curve comparison plots
-    run_interpretability.py # 5 mechanistic interpretability experiments
+    run_interpretability.py # 12 mechanistic interpretability experiments
 ```
 
 ## Setup
