@@ -311,36 +311,40 @@ class SudokuJEPA(nn.Module):
         device = puzzle.device
         n_particles = cfg.n_chains
 
-        z_context = self.context_encoder(puzzle)
-        z_context_exp = z_context.repeat_interleave(n_particles, dim=0)
-        puzzle_exp = puzzle.repeat_interleave(n_particles, dim=0)
-        mask_exp = mask.repeat_interleave(n_particles, dim=0)
+        # Use math SDPA backend — efficient/flash kernels don't support
+        # the second-order gradients needed for create_graph=True.
+        with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
+            z_context = self.context_encoder(puzzle)
+            z_context_exp = z_context.repeat_interleave(n_particles, dim=0)
+            puzzle_exp = puzzle.repeat_interleave(n_particles, dim=0)
+            mask_exp = mask.repeat_interleave(n_particles, dim=0)
 
-        z = torch.randn(batch_size * n_particles, self.arch_cfg.d_latent, device=device, requires_grad=True)
+            z = torch.randn(batch_size * n_particles, self.arch_cfg.d_latent, device=device, requires_grad=True)
 
-        for step in range(cfg.n_steps):
-            z_pred = self.predictor(z_context_exp, z)
-            logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)
-            probs = torch.softmax(logits, dim=-1)
+            for step in range(cfg.n_steps):
+                z_pred = self.predictor(z_context_exp, z)
+                logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)
+                probs = torch.softmax(logits, dim=-1)
 
-            z_target_est = self.target_encoder(probs.permute(0, 3, 1, 2))
-            self_consistency = ((z_pred - z_target_est) ** 2).sum(dim=-1)
-            c_penalty = constraint_penalty(probs)
+                z_target_est = self.target_encoder(probs.permute(0, 3, 1, 2))
+                self_consistency = ((z_pred - z_target_est) ** 2).sum(dim=-1)
+                c_penalty = constraint_penalty(probs)
 
-            temp = 1.0 - step / max(cfg.n_steps, 1)
-            total_energy = self_consistency + c_penalty * (1.0 + 2.0 * (1.0 - temp))
+                temp = 1.0 - step / max(cfg.n_steps, 1)
+                total_energy = self_consistency + c_penalty * (1.0 + 2.0 * (1.0 - temp))
 
-            grad_z = torch.autograd.grad(total_energy.sum(), z, create_graph=True)[0]
+                grad_z = torch.autograd.grad(total_energy.sum(), z, create_graph=True)[0]
 
-            d = z.shape[-1]
-            z_batched = z.reshape(batch_size, n_particles, d)
-            grad_batched = grad_z.reshape(batch_size, n_particles, d)
+                d = z.shape[-1]
+                z_batched = z.reshape(batch_size, n_particles, d)
+                grad_batched = grad_z.reshape(batch_size, n_particles, d)
 
-            K, grad_K = rbf_kernel(z_batched, cfg.kernel_bandwidth)
-            update = svgd_update(grad_batched, K, grad_K, repulsion_weight=temp)
+                K, grad_K = rbf_kernel(z_batched, cfg.kernel_bandwidth)
+                update = svgd_update(grad_batched, K, grad_K, repulsion_weight=temp)
 
-            z = (z_batched - cfg.lr * update).reshape(batch_size * n_particles, d)
+                z = (z_batched - cfg.lr * update).reshape(batch_size * n_particles, d)
 
-        final_logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)
+            final_logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)
+
         final_logits = final_logits.reshape(batch_size, n_particles, 9, 9, 9)
         return final_logits.mean(dim=1)
