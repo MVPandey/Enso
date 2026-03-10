@@ -1,6 +1,7 @@
 """Configuration for the application."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -59,6 +60,12 @@ class TrainingConfig(BaseModel):
     langevin_lr: float = Field(default=0.01, description='Langevin dynamics step size.')
     langevin_noise_scale: float = Field(default=0.005, description='Langevin dynamics noise scale.')
     n_chains: int = Field(default=8, description='Number of parallel Langevin chains.')
+    inference_method: Literal['langevin', 'svgd'] = Field(
+        default='langevin', description='Inference method for solving.'
+    )
+    kernel_bandwidth: float | None = Field(
+        default=None, description='RBF kernel bandwidth for SVGD. None = median heuristic.'
+    )
     z_noise_scale: float = Field(
         default=0.1,
         description='Noise scale for z during training (z = z_encoder(z_target) + noise * scale). '

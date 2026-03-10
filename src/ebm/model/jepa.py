@@ -1,15 +1,18 @@
 """SudokuJEPA — top-level orchestrator wiring all model components."""
 
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 import torch.nn.functional as F
+from pydantic import BaseModel
 from torch import Tensor, nn
 
 from ebm.model.constraints import constraint_penalty
 from ebm.model.decoder import SudokuDecoder
 from ebm.model.encoder import SudokuEncoder
 from ebm.model.energy import energy_fn
+from ebm.model.kernels import rbf_kernel, svgd_update
 from ebm.model.predictor import LatentPredictor
 from ebm.utils.config import ArchitectureConfig, TrainingConfig
 
@@ -25,23 +28,26 @@ class JEPAOutput:
     decode_logits: Tensor
 
 
-@dataclass
-class InferenceConfig:
-    """Parameters for Langevin dynamics inference."""
+class InferenceConfig(BaseModel):
+    """Parameters for iterative latent-space inference."""
 
+    method: Literal['langevin', 'svgd'] = 'langevin'
     n_steps: int = 50
     n_chains: int = 8
     lr: float = 0.01
     noise_scale: float = 0.005
+    kernel_bandwidth: float | None = None
 
     @classmethod
     def from_training_config(cls, cfg: TrainingConfig) -> 'InferenceConfig':
-        """Create from a TrainingConfig, using its Langevin defaults."""
+        """Create from a TrainingConfig, using its inference defaults."""
         return cls(
+            method=cfg.inference_method,
             n_steps=cfg.langevin_steps,
             n_chains=cfg.n_chains,
             lr=cfg.langevin_lr,
             noise_scale=cfg.langevin_noise_scale,
+            kernel_bandwidth=cfg.kernel_bandwidth,
         )
 
 
@@ -51,7 +57,7 @@ class SudokuJEPA(nn.Module):
 
     Wires together context encoder, target encoder (EMA), latent predictor,
     decoder, and energy function. Provides forward() for training and
-    solve() for inference via Langevin dynamics.
+    solve() for inference via Langevin dynamics or SVGD.
     """
 
     def __init__(
@@ -144,6 +150,63 @@ class SudokuJEPA(nn.Module):
             decode_logits=decode_logits,
         )
 
+    def _langevin_step(
+        self,
+        z: Tensor,
+        grad_z: Tensor,
+        lr: float,
+        noise_scale: float,
+        temp: float,
+    ) -> Tensor:
+        """
+        Apply one Langevin dynamics step with gradient descent and noise.
+
+        Args:
+            z: Current latent positions ``(B*N, D)``.
+            grad_z: Energy gradients ``(B*N, D)``.
+            lr: Step size.
+            noise_scale: Base noise scale.
+            temp: Temperature annealing factor.
+
+        Returns:
+            Updated latent positions ``(B*N, D)``.
+
+        """
+        noise = noise_scale * temp * torch.randn_like(z)
+        return (z - lr * grad_z + noise).detach().requires_grad_(True)
+
+    def _svgd_step(
+        self,
+        z: Tensor,
+        grad_z: Tensor,
+        cfg: InferenceConfig,
+        batch_size: int,
+    ) -> Tensor:
+        """
+        Apply one SVGD step with kernel-mediated attraction and repulsion.
+
+        Args:
+            z: Current latent positions ``(B*N, D)``.
+            grad_z: Energy gradients ``(B*N, D)``.
+            cfg: Inference config containing lr, n_chains, and kernel_bandwidth.
+            batch_size: Number of puzzles in the batch.
+
+        Returns:
+            Updated latent positions ``(B*N, D)``.
+
+        """
+        n_particles = cfg.n_chains
+        d = z.shape[-1]
+        # Reshape to per-puzzle particles: (B, N, D)
+        z_batched = z.reshape(batch_size, n_particles, d)
+        grad_batched = grad_z.reshape(batch_size, n_particles, d)
+
+        K, grad_K = rbf_kernel(z_batched, cfg.kernel_bandwidth)
+        update = svgd_update(grad_batched, K, grad_K)
+
+        z_new = z_batched - cfg.lr * update
+        return z_new.reshape(batch_size * n_particles, d).detach().requires_grad_(True)
+
     def solve(
         self,
         puzzle: Tensor,
@@ -151,12 +214,14 @@ class SudokuJEPA(nn.Module):
         inference_cfg: InferenceConfig | None = None,
     ) -> Tensor:
         """
-        Solve a puzzle via Langevin dynamics in latent space.
+        Solve a puzzle via iterative inference in latent space.
+
+        Uses either Langevin dynamics or SVGD depending on ``inference_cfg.method``.
 
         Args:
             puzzle: (B, 10, 9, 9) one-hot encoded puzzle.
             mask: (B, 9, 9) binary mask.
-            inference_cfg: Langevin dynamics parameters. Defaults from train_cfg.
+            inference_cfg: Inference parameters. Defaults from train_cfg.
 
         Returns:
             (B, 9, 9) integer solution grid with digits 1-9.
@@ -198,8 +263,17 @@ class SudokuJEPA(nn.Module):
                 total_energy = self_consistency + c_penalty * (1.0 + 2.0 * (1.0 - temp))
 
                 grad_z = torch.autograd.grad(total_energy.sum(), z)[0]
-                noise = inference_cfg.noise_scale * temp * torch.randn_like(z)
-                z = (z - inference_cfg.lr * grad_z + noise).detach().requires_grad_(True)
+
+                if inference_cfg.method == 'svgd':
+                    z = self._svgd_step(z, grad_z, inference_cfg, batch_size)
+                else:
+                    z = self._langevin_step(
+                        z,
+                        grad_z,
+                        inference_cfg.lr,
+                        inference_cfg.noise_scale,
+                        temp,
+                    )
 
         with torch.no_grad():
             final_logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)

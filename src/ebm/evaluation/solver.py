@@ -9,7 +9,7 @@ from ebm.model.jepa import InferenceConfig, SudokuJEPA
 
 def solve_batch(model: SudokuJEPA, puzzle: Tensor, mask: Tensor, cfg: InferenceConfig) -> Tensor:
     """
-    Solve a batch of puzzles using Langevin dynamics.
+    Solve a batch of puzzles using iterative inference.
 
     Args:
         model: Trained SudokuJEPA model.

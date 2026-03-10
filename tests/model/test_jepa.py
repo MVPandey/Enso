@@ -16,6 +16,7 @@ SMALL_ARCH = ArchitectureConfig(
 )
 SMALL_TRAIN = TrainingConfig(langevin_steps=3, n_chains=2)
 SMALL_INFERENCE = InferenceConfig(n_steps=3, n_chains=2)
+SMALL_SVGD_INFERENCE = InferenceConfig(method='svgd', n_steps=3, n_chains=4, lr=0.1)
 
 
 def _make_batch(b: int = 2) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -128,3 +129,43 @@ def test_backward_through_forward():
         assert p.grad is not None, f'No gradient for predictor.{name}'
     for name, p in model.z_encoder.named_parameters():
         assert p.grad is not None, f'No gradient for z_encoder.{name}'
+
+
+def test_solve_svgd_shape():
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    model.eval()
+    puzzle, _, mask = _make_batch(2)
+    solution = model.solve(puzzle, mask, SMALL_SVGD_INFERENCE)
+    assert solution.shape == (2, 9, 9)
+    assert solution.dtype == torch.int64
+
+
+def test_solve_svgd_values_in_range():
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    model.eval()
+    puzzle, _, mask = _make_batch(2)
+    solution = model.solve(puzzle, mask, SMALL_SVGD_INFERENCE)
+    assert (solution >= 1).all()
+    assert (solution <= 9).all()
+
+
+def test_solve_svgd_works_inside_no_grad():
+    """SVGD must work even inside a torch.no_grad() context."""
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    model.eval()
+    puzzle, _, mask = _make_batch(1)
+    with torch.no_grad():
+        solution = model.solve(puzzle, mask, SMALL_SVGD_INFERENCE)
+    assert solution.shape == (1, 9, 9)
+
+
+def test_inference_config_default_is_langevin():
+    cfg = InferenceConfig()
+    assert cfg.method == 'langevin'
+
+
+def test_inference_config_svgd_from_training_config():
+    train_cfg = TrainingConfig(inference_method='svgd', kernel_bandwidth=0.5)
+    cfg = InferenceConfig.from_training_config(train_cfg)
+    assert cfg.method == 'svgd'
+    assert cfg.kernel_bandwidth == 0.5

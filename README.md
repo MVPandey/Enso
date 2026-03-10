@@ -47,7 +47,7 @@ graph LR
     style z fill:#ff9800,color:#fff
 ```
 
-### Inference (Langevin Dynamics)
+### Inference (Langevin Dynamics or SVGD)
 
 ```mermaid
 graph LR
@@ -59,7 +59,7 @@ graph LR
     subgraph loop ["Iterate T steps"]
         direction TB
         energy["E(z, z_context)"] --> grad["∇z Energy"]
-        grad --> update["z ← z − η∇E + noise"]
+        grad --> update["Langevin: z ← z − η∇E + noise\nSVGD: z ← z − η·φ*(z)"]
     end
 
     z_ctx --> loop
@@ -70,6 +70,10 @@ graph LR
     style loop fill:#fff3e0,stroke:#ff9800
     style sol fill:#4a9eff,color:#fff
 ```
+
+Two inference methods are supported:
+- **Langevin dynamics** (default): Independent chains do gradient descent + noise on the energy landscape.
+- **SVGD** (Stein Variational Gradient Descent): Particles interact via an RBF kernel — attraction follows energy gradients, repulsion maintains diversity. No noise injection needed.
 
 ### Components
 
@@ -94,11 +98,11 @@ $$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{energy}} + \mathcal{L}_{\text{
 
 ### Inference
 
-At inference time, the model solves puzzles through Langevin dynamics — gradient-based optimization of the latent variable z:
+At inference time, the model solves puzzles through iterative optimization of the latent variable z:
 
-1. Initialize multiple z chains from N(0, I)
+1. Initialize multiple z chains/particles from N(0, I)
 2. For each step, decode z to a candidate solution, re-encode through the target encoder, and compute self-consistency energy + constraint penalty
-3. Update z via gradient descent with noise (temperature annealing)
+3. Update z via **Langevin dynamics** (gradient descent + noise with temperature annealing) or **SVGD** (kernel-mediated attraction/repulsion between particles)
 4. Select the lowest-energy chain and decode to a discrete grid
 
 ## Results
@@ -134,6 +138,7 @@ src/ebm/
         decoder.py          # SudokuDecoder (lightweight Transformer)
         energy.py           # Energy function (L2 distance)
         constraints.py      # Differentiable Sudoku constraint penalty
+        kernels.py          # RBF kernel and SVGD update
         jepa.py             # SudokuJEPA orchestrator
     training/
         trainer.py          # Training loop with validation
@@ -142,8 +147,9 @@ src/ebm/
         scheduler.py        # LR warmup + cosine decay, EMA scheduling
         metrics.py          # Weights & Biases integration
     evaluation/
-        solver.py           # Langevin dynamics inference
+        solver.py           # Iterative inference (Langevin / SVGD)
         metrics.py          # Cell accuracy, puzzle accuracy, constraint satisfaction
+        plotting.py         # Experiment comparison plots
     utils/
         config.py           # Pydantic configuration classes
         device.py           # GPU detection, auto-scaling batch size + LR
@@ -152,6 +158,7 @@ tests/                      # Unit tests (101 tests, 96%+ coverage)
 scripts/
     smoke_test.py           # Quick training validation script
     plot_training.py        # Generate training curve comparison plots
+    compare_inference.py    # Langevin vs SVGD comparison experiment
 ```
 
 ## Setup
@@ -191,13 +198,30 @@ uv run python -m ebm.main train --batch-size 256 --epochs 10
 ### Evaluation
 
 ```bash
-# Evaluate a trained checkpoint
+# Evaluate a trained checkpoint (Langevin dynamics, default)
 uv run python -m ebm.main eval --checkpoint checkpoints/best.pt
 
 # With custom inference parameters
 uv run python -m ebm.main eval --checkpoint checkpoints/best.pt \
     --langevin-steps 100 --n-chains 16
+
+# Use SVGD instead of Langevin
+uv run python -m ebm.main eval --checkpoint checkpoints/best.pt \
+    --inference-method svgd --n-chains 16
 ```
+
+### Compare Inference Methods
+
+```bash
+# Run Langevin vs SVGD comparison (sweeps chain counts, generates plots)
+uv run python scripts/compare_inference.py
+
+# Full sweep with bandwidth sensitivity analysis
+uv run python scripts/compare_inference.py --n-puzzles 500 \
+    --chains 4 8 16 32 --bandwidth-sweep
+```
+
+Results are saved to `results/svgd_comparison/` with JSON metrics and PNG plots.
 
 ### Smoke Test
 
@@ -209,15 +233,17 @@ uv run python scripts/smoke_test.py
 ## Development
 
 ```bash
-# Run tests
-uv run pytest
+# Run all checks (lint + typecheck + tests)
+make all
 
-# Lint and format
-uv run ruff check --fix .
-uv run ruff format .
+# Or individually
+make test         # pytest with coverage
+make lint         # ruff check with auto-fix
+make format       # ruff format
+make typecheck    # ty type checker
 
-# Type check
-uv run ty check src/
+# Full CI pipeline (format + lint + typecheck + test)
+make check
 ```
 
 ## Dataset

@@ -77,4 +77,5 @@ omit = [
     "src/ebm/main.py",
     "src/ebm/training/trainer.py",
     "src/ebm/training/metrics.py",
+    "src/ebm/evaluation/plotting.py",
 ]

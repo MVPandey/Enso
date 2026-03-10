@@ -130,13 +130,26 @@ def eval_model(args: argparse.Namespace) -> None:
     CheckpointManager.load(Path(checkpoint_path), model)
     model.to(device)
 
+    overrides: dict[str, object] = {}
+    if args.inference_method:
+        overrides['inference_method'] = args.inference_method
+    if args.kernel_bandwidth is not None:
+        overrides['kernel_bandwidth'] = args.kernel_bandwidth
+    if overrides:
+        train_cfg = train_cfg.model_copy(update=overrides)
+
     inference_cfg = InferenceConfig.from_training_config(train_cfg)
     if args.langevin_steps:
-        inference_cfg.n_steps = args.langevin_steps
+        inference_cfg = inference_cfg.model_copy(update={'n_steps': args.langevin_steps})
     if args.n_chains:
-        inference_cfg.n_chains = args.n_chains
+        inference_cfg = inference_cfg.model_copy(update={'n_chains': args.n_chains})
 
-    logger.info('Running inference (steps=%d, chains=%d)...', inference_cfg.n_steps, inference_cfg.n_chains)
+    logger.info(
+        'Running inference (method=%s, steps=%d, chains=%d)...',
+        inference_cfg.method,
+        inference_cfg.n_steps,
+        inference_cfg.n_chains,
+    )
     preds, solutions, masks = solve_dataset(model, test_loader, inference_cfg, device)
 
     metrics = evaluate(preds, solutions, masks)
@@ -161,6 +174,13 @@ def main() -> None:
     eval_parser.add_argument('--n-samples', type=int, help='Limit dataset to first N samples')
     eval_parser.add_argument('--langevin-steps', type=int, help='Override Langevin dynamics steps')
     eval_parser.add_argument('--n-chains', type=int, help='Override number of parallel chains')
+    eval_parser.add_argument(
+        '--inference-method',
+        choices=['langevin', 'svgd'],
+        default=None,
+        help='Inference method (default: from config)',
+    )
+    eval_parser.add_argument('--kernel-bandwidth', type=float, default=None, help='RBF kernel bandwidth for SVGD')
 
     args = parser.parse_args()
 
