@@ -1,0 +1,138 @@
+{
+  "main_sweep": [
+    {
+      "method": "langevin",
+      "n_chains": 4,
+      "n_steps": 50,
+      "kernel_bandwidth": null,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.99299866641265,
+      "puzzle_accuracy": 0.96,
+      "constraint_satisfaction": 0.9924444444444445,
+      "time_s": 30.024267740547657
+    },
+    {
+      "method": "svgd",
+      "n_chains": 4,
+      "n_steps": 50,
+      "kernel_bandwidth": null,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.9673271099257001,
+      "puzzle_accuracy": 0.684,
+      "constraint_satisfaction": 0.9417037037037037,
+      "time_s": 29.61103880777955
+    },
+    {
+      "method": "langevin",
+      "n_chains": 8,
+      "n_steps": 50,
+      "kernel_bandwidth": null,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.9934273194894265,
+      "puzzle_accuracy": 0.968,
+      "constraint_satisfaction": 0.993037037037037,
+      "time_s": 55.43643866293132
+    },
+    {
+      "method": "svgd",
+      "n_chains": 8,
+      "n_steps": 50,
+      "kernel_bandwidth": null,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.9736616498380644,
+      "puzzle_accuracy": 0.772,
+      "constraint_satisfaction": 0.9605925925925926,
+      "time_s": 55.61381717771292
+    },
+    {
+      "method": "langevin",
+      "n_chains": 16,
+      "n_steps": 50,
+      "kernel_bandwidth": null,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.993570203848352,
+      "puzzle_accuracy": 0.968,
+      "constraint_satisfaction": 0.9936296296296296,
+      "time_s": 106.86859006807208
+    },
+    {
+      "method": "svgd",
+      "n_chains": 16,
+      "n_steps": 50,
+      "kernel_bandwidth": null,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.9807106115450562,
+      "puzzle_accuracy": 0.854,
+      "constraint_satisfaction": 0.9729629629629629,
+      "time_s": 106.99088720977306
+    },
+    {
+      "method": "langevin",
+      "n_chains": 32,
+      "n_steps": 50,
+      "kernel_bandwidth": null,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.9939036006858449,
+      "puzzle_accuracy": 0.968,
+      "constraint_satisfaction": 0.9943703703703703,
+      "time_s": 210.19980165734887
+    },
+    {
+      "method": "svgd",
+      "n_chains": 32,
+      "n_steps": 50,
+      "kernel_bandwidth": null,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.9821870832539531,
+      "puzzle_accuracy": 0.864,
+      "constraint_satisfaction": 0.9766666666666667,
+      "time_s": 210.22629579156637
+    }
+  ],
+  "bandwidth_sweep": [
+    {
+      "method": "svgd",
+      "n_chains": 16,
+      "n_steps": 50,
+      "kernel_bandwidth": 0.01,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.9820441988950276,
+      "puzzle_accuracy": 0.87,
+      "constraint_satisfaction": 0.9772592592592593,
+      "time_s": 106.56580017693341
+    },
+    {
+      "method": "svgd",
+      "n_chains": 16,
+      "n_steps": 50,
+      "kernel_bandwidth": 0.1,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.9798533053915032,
+      "puzzle_accuracy": 0.86,
+      "constraint_satisfaction": 0.9743703703703703,
+      "time_s": 106.45421778038144
+    },
+    {
+      "method": "svgd",
+      "n_chains": 16,
+      "n_steps": 50,
+      "kernel_bandwidth": 1.0,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.9774718994094114,
+      "puzzle_accuracy": 0.848,
+      "constraint_satisfaction": 0.973037037037037,
+      "time_s": 106.37663866579533
+    },
+    {
+      "method": "svgd",
+      "n_chains": 16,
+      "n_steps": 50,
+      "kernel_bandwidth": 10.0,
+      "n_puzzles": 500,
+      "cell_accuracy": 0.9786149742808153,
+      "puzzle_accuracy": 0.842,
+      "constraint_satisfaction": 0.9732592592592593,
+      "time_s": 106.33991861715913
+    }
+  ]
+}
