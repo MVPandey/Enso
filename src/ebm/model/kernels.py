@@ -42,7 +42,12 @@ def rbf_kernel(particles: Tensor, bandwidth: float | None = None) -> tuple[Tenso
     return K, grad_K
 
 
-def svgd_update(grad_energy: Tensor, kernel_matrix: Tensor, kernel_grads: Tensor) -> Tensor:
+def svgd_update(
+    grad_energy: Tensor,
+    kernel_matrix: Tensor,
+    kernel_grads: Tensor,
+    repulsion_weight: float = 1.0,
+) -> Tensor:
     """
     Compute the SVGD update direction for a batch of particles.
 
@@ -54,6 +59,9 @@ def svgd_update(grad_energy: Tensor, kernel_matrix: Tensor, kernel_grads: Tensor
             uphill (positive energy direction).
         kernel_matrix: RBF kernel matrix ``K`` with shape ``(B, N, N)``.
         kernel_grads: Kernel gradients with shape ``(B, N, N, D)``.
+        repulsion_weight: Scalar in ``[0, 1]`` multiplied onto the repulsion
+            term. Set to ``1.0`` for standard SVGD, anneal toward ``0.0``
+            to let particles converge independently in late steps.
 
     Returns:
         SVGD update direction with shape ``(B, N, D)``, to be used as
@@ -65,4 +73,4 @@ def svgd_update(grad_energy: Tensor, kernel_matrix: Tensor, kernel_grads: Tensor
     attraction = torch.bmm(kernel_matrix, -grad_energy)
     # Repulsion: sum over source particles j -> (B, N, D)
     repulsion = kernel_grads.sum(dim=2)
-    return (attraction + repulsion) / n
+    return (attraction + repulsion_weight * repulsion) / n

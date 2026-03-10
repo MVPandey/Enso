@@ -181,6 +181,7 @@ class SudokuJEPA(nn.Module):
         grad_z: Tensor,
         cfg: InferenceConfig,
         batch_size: int,
+        temp: float = 1.0,
     ) -> Tensor:
         """
         Apply one SVGD step with kernel-mediated attraction and repulsion.
@@ -190,6 +191,8 @@ class SudokuJEPA(nn.Module):
             grad_z: Energy gradients ``(B*N, D)``.
             cfg: Inference config containing lr, n_chains, and kernel_bandwidth.
             batch_size: Number of puzzles in the batch.
+            temp: Temperature in ``[0, 1]``. Used as repulsion weight so
+                repulsion anneals from full (early) to zero (late).
 
         Returns:
             Updated latent positions ``(B*N, D)``.
@@ -202,7 +205,7 @@ class SudokuJEPA(nn.Module):
         grad_batched = grad_z.reshape(batch_size, n_particles, d)
 
         K, grad_K = rbf_kernel(z_batched, cfg.kernel_bandwidth)
-        update = svgd_update(grad_batched, K, grad_K)
+        update = svgd_update(grad_batched, K, grad_K, repulsion_weight=temp)
 
         z_new = z_batched - cfg.lr * update
         return z_new.reshape(batch_size * n_particles, d).detach().requires_grad_(True)
@@ -265,7 +268,7 @@ class SudokuJEPA(nn.Module):
                 grad_z = torch.autograd.grad(total_energy.sum(), z)[0]
 
                 if inference_cfg.method == 'svgd':
-                    z = self._svgd_step(z, grad_z, inference_cfg, batch_size)
+                    z = self._svgd_step(z, grad_z, inference_cfg, batch_size, temp)
                 else:
                     z = self._langevin_step(
                         z,
