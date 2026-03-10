@@ -215,4 +215,8 @@ wandb/
 
 # Claude Code
 .claude/
-python_skill.md
+python_skill.mdresearch/
+
+# Research Direction
+/research
+/website
