@@ -287,3 +287,60 @@ class SudokuJEPA(nn.Module):
         best_logits = final_logits[torch.arange(batch_size, device=device), best_chain]
 
         return best_logits.argmax(dim=-1) + 1
+
+    def forward_svgd(self, puzzle: Tensor, mask: Tensor, cfg: InferenceConfig) -> Tensor:
+        """
+        Differentiable unrolled SVGD for SVGD-in-the-loop training.
+
+        Runs ``cfg.n_steps`` SVGD steps with ``create_graph=True`` so gradients
+        flow back through the dynamics to all model parameters. This teaches the
+        model to produce energy landscapes that SVGD can navigate to correct
+        solutions.
+
+        Args:
+            puzzle: (B, 10, 9, 9) one-hot encoded puzzle.
+            mask: (B, 9, 9) binary mask, 1 = given clue.
+            cfg: Inference config with n_chains (particles), n_steps, lr,
+                and kernel_bandwidth.
+
+        Returns:
+            (B, 9, 9, 9) decode logits averaged across particles after SVGD.
+
+        """
+        batch_size = puzzle.shape[0]
+        device = puzzle.device
+        n_particles = cfg.n_chains
+
+        z_context = self.context_encoder(puzzle)
+        z_context_exp = z_context.repeat_interleave(n_particles, dim=0)
+        puzzle_exp = puzzle.repeat_interleave(n_particles, dim=0)
+        mask_exp = mask.repeat_interleave(n_particles, dim=0)
+
+        z = torch.randn(batch_size * n_particles, self.arch_cfg.d_latent, device=device, requires_grad=True)
+
+        for step in range(cfg.n_steps):
+            z_pred = self.predictor(z_context_exp, z)
+            logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)
+            probs = torch.softmax(logits, dim=-1)
+
+            z_target_est = self.target_encoder(probs.permute(0, 3, 1, 2))
+            self_consistency = ((z_pred - z_target_est) ** 2).sum(dim=-1)
+            c_penalty = constraint_penalty(probs)
+
+            temp = 1.0 - step / max(cfg.n_steps, 1)
+            total_energy = self_consistency + c_penalty * (1.0 + 2.0 * (1.0 - temp))
+
+            grad_z = torch.autograd.grad(total_energy.sum(), z, create_graph=True)[0]
+
+            d = z.shape[-1]
+            z_batched = z.reshape(batch_size, n_particles, d)
+            grad_batched = grad_z.reshape(batch_size, n_particles, d)
+
+            K, grad_K = rbf_kernel(z_batched, cfg.kernel_bandwidth)
+            update = svgd_update(grad_batched, K, grad_K, repulsion_weight=temp)
+
+            z = (z_batched - cfg.lr * update).reshape(batch_size * n_particles, d)
+
+        final_logits = self.decoder(z_context_exp, z, puzzle_exp, mask_exp)
+        final_logits = final_logits.reshape(batch_size, n_particles, 9, 9, 9)
+        return final_logits.mean(dim=1)

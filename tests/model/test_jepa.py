@@ -169,3 +169,50 @@ def test_inference_config_svgd_from_training_config():
     cfg = InferenceConfig.from_training_config(train_cfg)
     assert cfg.method == 'svgd'
     assert cfg.kernel_bandwidth == 0.5
+
+
+SMALL_SVGD_TRAIN_CFG = InferenceConfig(method='svgd', n_steps=2, n_chains=2, lr=0.01)
+
+
+def test_forward_svgd_shape():
+    """forward_svgd returns (B, 9, 9, 9) averaged logits."""
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    puzzle, _, mask = _make_batch(2)
+    logits = model.forward_svgd(puzzle, mask, SMALL_SVGD_TRAIN_CFG)
+    assert logits.shape == (2, 9, 9, 9)
+
+
+def test_forward_svgd_differentiable():
+    """Gradients flow back through unrolled SVGD to model parameters."""
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    puzzle, _, mask = _make_batch(2)
+    logits = model.forward_svgd(puzzle, mask, SMALL_SVGD_TRAIN_CFG)
+    loss = logits.sum()
+    loss.backward()
+    for name, p in model.context_encoder.named_parameters():
+        assert p.grad is not None, f'No gradient for context_encoder.{name}'
+    for name, p in model.predictor.named_parameters():
+        assert p.grad is not None, f'No gradient for predictor.{name}'
+    for name, p in model.decoder.named_parameters():
+        assert p.grad is not None, f'No gradient for decoder.{name}'
+
+
+def test_forward_svgd_combined_loss_backward():
+    """Standard JEPA loss + SVGD loss can be combined and backpropagated."""
+    model = SudokuJEPA(SMALL_ARCH, SMALL_TRAIN)
+    puzzle, solution, mask = _make_batch(2)
+
+    # Standard forward
+    out = model(puzzle, solution, mask)
+    jepa_loss = out.energy.mean()
+
+    # SVGD forward
+    svgd_logits = model.forward_svgd(puzzle, mask, SMALL_SVGD_TRAIN_CFG)
+    svgd_loss = svgd_logits.sum() * 0.001
+
+    total = jepa_loss + svgd_loss
+    total.backward()
+
+    # Context encoder gets gradients from both paths
+    for name, p in model.context_encoder.named_parameters():
+        assert p.grad is not None, f'No gradient for context_encoder.{name}'
