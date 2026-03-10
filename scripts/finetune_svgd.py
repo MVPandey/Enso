@@ -29,13 +29,49 @@ from ebm.model.constraints import constraint_penalty
 from ebm.model.jepa import InferenceConfig, SudokuJEPA
 from ebm.training.checkpoint import CheckpointManager, _CheckpointData
 from ebm.training.losses import compute_loss
-from ebm.training.metrics import compute_cell_accuracy, compute_puzzle_accuracy
-from ebm.utils.config import ArchitectureConfig, TrainingConfig
+from ebm.training.metrics import compute_cell_accuracy, compute_puzzle_accuracy, finish_wandb, init_wandb
+from ebm.utils.config import ArchitectureConfig, Config, TrainingConfig
+
+try:
+    import wandb
+
+    _wandb_available = True
+except ImportError:
+    _wandb_available = False
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
 DEFAULT_CHECKPOINT = Path('checkpoints/checkpoint_epoch019_acc0.9926.pt')
+
+
+def _log_step(total_loss: float, jepa_loss: float, svgd_loss: float, lr: float, step: int) -> None:
+    """Log per-step metrics to W&B."""
+    if not _wandb_available or wandb.run is None:
+        return
+    wandb.log(
+        {
+            'finetune/loss_total': total_loss,
+            'finetune/loss_jepa': jepa_loss,
+            'finetune/loss_svgd': svgd_loss,
+            'finetune/lr': lr,
+        },
+        step=step,
+    )
+
+
+def _log_epoch(val_energy: float, cell_acc: float, puzzle_acc: float, step: int) -> None:
+    """Log per-epoch validation metrics to W&B."""
+    if not _wandb_available or wandb.run is None:
+        return
+    wandb.log(
+        {
+            'val/energy': val_energy,
+            'val/cell_accuracy': cell_acc,
+            'val/puzzle_accuracy': puzzle_acc,
+        },
+        step=step,
+    )
 
 
 def _create_loaders(args: argparse.Namespace) -> tuple[DataLoader, DataLoader]:
@@ -160,6 +196,23 @@ def finetune(args: argparse.Namespace) -> None:
             torch.cuda.get_device_properties(0).total_memory / (1024**3),
         )
 
+    # Initialize W&B
+    app_cfg = Config()
+    init_wandb(
+        app_cfg,
+        run_name='svgd-finetune',
+        extra_config={
+            'finetune_lr': args.lr,
+            'finetune_epochs': args.epochs,
+            'finetune_batch_size': args.batch_size,
+            'svgd_steps': args.svgd_steps,
+            'svgd_particles': args.svgd_particles,
+            'svgd_lr': args.svgd_lr,
+            'svgd_weight': args.svgd_weight,
+            'ema_momentum': args.ema_momentum,
+        },
+    )
+
     train_loader, val_loader = _create_loaders(args)
     model, train_cfg = _load_model(Path(args.checkpoint), device)
 
@@ -187,6 +240,7 @@ def finetune(args: argparse.Namespace) -> None:
     # Baseline validation before fine-tuning
     val_energy, cell_acc, puzzle_acc = _validate(model, val_loader, device)
     logger.info('Baseline | val_energy=%.4f | cell_acc=%.4f | puzzle_acc=%.4f', val_energy, cell_acc, puzzle_acc)
+    _log_epoch(val_energy, cell_acc, puzzle_acc, step=0)
 
     step_cfg = _StepConfig(train_cfg=train_cfg, svgd_cfg=svgd_cfg, svgd_weight=args.svgd_weight, device=device)
 
@@ -220,6 +274,9 @@ def finetune(args: argparse.Namespace) -> None:
             n_batches += 1
             global_step += 1
 
+            lr = scheduler.get_last_lr()[0]
+            _log_step(total_loss.item(), jepa_val, svgd_val, lr, global_step)
+
             if global_step % args.log_every == 0:
                 logger.info(
                     'Step %d | total=%.4f | jepa=%.4f | svgd=%.4f | lr=%.2e',
@@ -227,11 +284,13 @@ def finetune(args: argparse.Namespace) -> None:
                     total_loss.item(),
                     jepa_val,
                     svgd_val,
-                    scheduler.get_last_lr()[0],
+                    lr,
                 )
 
         # Validate
         val_energy, cell_acc, puzzle_acc = _validate(model, val_loader, device)
+        _log_epoch(val_energy, cell_acc, puzzle_acc, global_step)
+
         d = max(n_batches, 1)
         logger.info(
             'Epoch %d/%d | loss=%.4f (jepa=%.4f + svgd=%.4f) | val_energy=%.4f | cell=%.4f | puzzle=%.4f',
@@ -257,6 +316,7 @@ def finetune(args: argparse.Namespace) -> None:
         )
 
     logger.info('Fine-tuning complete. Checkpoints saved to %s', checkpoint_dir)
+    finish_wandb()
 
 
 def main() -> None:
